@@ -116,8 +116,9 @@ type app struct {
 
 	// fans is the way to the fans of this PC, or nil.
 	fans fanBackend
-	// modeChoice is the index of the mode last set, or customChoice, or noChoice
-	// before the first: the firmware does not tell which one is on.
+	// modeChoice is the index of what was last set among the choices, which are the
+	// modes or else the presets, or customChoice, or noChoice before the first: the
+	// firmware does not tell which one is on.
 	modeChoice int
 	modeFailed bool
 
@@ -155,6 +156,33 @@ func (a *app) modes() []fanMode {
 
 // hasCurves tells whether the fan curves can be set.
 func (a *app) hasCurves() bool { return a.fans != nil && a.fans.hasCurves() }
+
+// presets lists the curves the app offers in place of modes: only where the
+// firmware has curves and no modes of its own.
+func (a *app) presets() []curvePreset {
+	if len(a.modes()) > 0 || !a.hasCurves() {
+		return nil
+	}
+	return curvePresets
+}
+
+// choiceLabels are the buttons to choose from: the firmware's modes, or else the
+// presets.
+func (a *app) choiceLabels() []string {
+	var labels []string
+	for _, m := range a.modes() {
+		labels = append(labels, m.label)
+	}
+	for _, p := range a.presets() {
+		labels = append(labels, p.label)
+	}
+	return labels
+}
+
+// usesCurves tells whether a choice sets curves of ours rather than a mode.
+func (a *app) usesCurves(i int) bool {
+	return i == customChoice || i >= 0 && a.presets() != nil
+}
 
 func percent(v float64, ok bool) string {
 	if !ok {
@@ -261,13 +289,17 @@ func (a *app) chooseMode(i int) {
 	case customChoice:
 		err = a.fans.setCurves(a.appliedCurves[cpuFanTab], a.appliedCurves[gpuFanTab])
 	default:
-		err = a.fans.setMode(a.modes()[i].value)
+		if p := a.presets(); p != nil {
+			err = a.fans.setCurves(p[i].curve, p[i].curve)
+		} else {
+			err = a.fans.setMode(a.modes()[i].value)
+		}
 	}
 	if err != nil {
 		log.Println("fan control:", err)
 		a.modeFailed = true
-		if i == customChoice {
-			a.modeChoice = noChoice // it went back to a mode
+		if a.usesCurves(i) {
+			a.modeChoice = noChoice // it went back to a mode, or to curves we do not know
 		}
 		return
 	}
@@ -299,10 +331,10 @@ func (a *app) fanSection(c *ui.Context) {
 				b.Background(t.SurfacePressed).Border(1, t.Accent)
 			}
 		}
-		if len(a.modes()) > 0 {
+		if labels := a.choiceLabels(); len(labels) > 0 {
 			ui.Row(c).Gap(4).Children(func() {
-				for i, m := range a.modes() {
-					button(i, m.label)
+				for i, l := range labels {
+					button(i, l)
 				}
 			})
 		}
@@ -316,6 +348,10 @@ func (a *app) fanSection(c *ui.Context) {
 			note("고급 설정의 곡선 사용 중. 이 기기는 앱에서 펌웨어 곡선으로 되돌릴 수 없어, 앱을 종료해도 곡선이 유지됩니다")
 		case a.modeChoice == customChoice:
 			note("고급 설정의 곡선 사용 중")
+		case a.usesCurves(a.modeChoice) && !a.fans.canLeaveCurves():
+			note("앱이 만든 곡선 사용 중. 이 기기는 앱에서 펌웨어 곡선으로 되돌릴 수 없어, 앱을 종료해도 곡선이 유지됩니다")
+		case a.presets() != nil:
+			note("이 기기에는 펌웨어 모드가 없어, 앱이 만든 곡선을 프리셋으로 제공합니다")
 		default:
 			note("실제 속도는 온도에 따라 펌웨어가 조절합니다")
 		}
@@ -324,6 +360,8 @@ func (a *app) fanSection(c *ui.Context) {
 			note("적용하지 못했습니다")
 		case a.modeChoice == noChoice && len(a.modes()) > 0:
 			note("현재 모드는 읽을 수 없어 고른 뒤에 표시됩니다")
+		case a.modeChoice == noChoice && a.presets() != nil:
+			note("현재 곡선은 읽을 수 없어 고른 뒤에 표시됩니다")
 		}
 		if a.setOpenAtLogin != nil && ui.Checkbox(c, &a.openAtLogin, "컴퓨터를 켤 때 이 팬 설정 적용").Changed() {
 			if err := a.setOpenAtLogin(a.openAtLogin); err != nil {
@@ -562,7 +600,7 @@ func (a *app) ready() {
 		// The firmware may have gone back to its own curves during the sleep.
 		mygo.Power.OnResume(func() {
 			mygo.RunOnMain(func() {
-				if a.modeChoice == customChoice {
+				if a.usesCurves(a.modeChoice) {
 					fans.forgetCurves()
 					a.chooseMode(a.modeChoice)
 				}

@@ -29,6 +29,20 @@ type fanCurve [8]curvePoint
 // defaultCurve is where a curve starts, and is safe.
 var defaultCurve = fanCurve{{40, 25}, {50, 30}, {60, 40}, {65, 45}, {70, 55}, {75, 70}, {80, 85}, {85, 100}}
 
+// curvePreset is a curve that the app offers as a choice, where the firmware has
+// curves but no modes.
+type curvePreset struct {
+	label string
+	curve fanCurve
+}
+
+// curvePresets reach the safety floors, so that none of them warns.
+var curvePresets = []curvePreset{
+	{"조용함", fanCurve{{40, 20}, {50, 25}, {60, 30}, {65, 40}, {70, 55}, {75, 70}, {80, 85}, {85, 100}}},
+	{"균형", defaultCurve},
+	{"최대", fanCurve{{40, 40}, {50, 50}, {60, 60}, {65, 70}, {70, 80}, {75, 90}, {80, 100}, {85, 100}}},
+}
+
 // safetyFloors are the fan levels that a curve should reach by these temperatures.
 // The chips protect themselves by slowing down, so a curve below them only warns.
 var safetyFloors = []curvePoint{{70, 55}, {75, 70}, {80, 85}, {85, 100}}
@@ -175,13 +189,15 @@ func saveCurves(path string, curves [2]fanCurve) error {
 // may not keep it. It holds a mode by its firmware value, not by its place in the
 // list.
 type savedChoice struct {
-	Kind string // choiceMode or choiceCurve
-	Mode uint32 `json:",omitempty"`
+	Kind   string // choiceMode, choicePreset or choiceCurve
+	Mode   uint32 `json:",omitempty"`
+	Preset string `json:",omitempty"` // by its label
 }
 
 const (
-	choiceMode  = "mode"
-	choiceCurve = "curve"
+	choiceMode   = "mode"
+	choicePreset = "preset"
+	choiceCurve  = "curve"
 )
 
 // saveChoice keeps a choice that was set, where the app has a file for it.
@@ -194,7 +210,11 @@ func (a *app) saveChoice(i int) {
 	case customChoice:
 		saved = savedChoice{Kind: choiceCurve}
 	default:
-		saved = savedChoice{Kind: choiceMode, Mode: a.modes()[i].value}
+		if p := a.presets(); p != nil {
+			saved = savedChoice{Kind: choicePreset, Preset: p[i].label}
+		} else {
+			saved = savedChoice{Kind: choiceMode, Mode: a.modes()[i].value}
+		}
 	}
 	data, err := json.Marshal(saved)
 	if err == nil {
@@ -226,6 +246,12 @@ func (a *app) restoreChoice() bool {
 	case choiceMode:
 		for i, m := range a.modes() {
 			if m.value == saved.Mode {
+				choice = i
+			}
+		}
+	case choicePreset:
+		for i, p := range a.presets() {
+			if p.label == saved.Preset {
 				choice = i
 			}
 		}

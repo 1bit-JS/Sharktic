@@ -889,20 +889,94 @@ func TestCurvesWithModesStartFromBalanced(t *testing.T) {
 func TestPanelWithCurvesOnly(t *testing.T) {
 	a := &app{modeChoice: -1, fans: &fakeFans{setCurvesFn: func(c, g fanCurve) error { return nil }, noLeaving: true}}
 	tt := ui.NewTester(a.view, 300, panelHeight+modesHeight)
-	if tt.HasText("균형") || !tt.HasText("고급 설정 (온도별 팬 곡선)") || tt.HasText("현재 모드는 읽을 수 없어") {
+	for _, want := range []string{"조용함", "균형", "최대", "고급 설정 (온도별 팬 곡선)", "앱이 만든 곡선을 프리셋으로", "현재 곡선은 읽을 수 없어"} {
+		if !tt.HasText(want) {
+			t.Errorf("before: no %q in %q", want, tt.Texts())
+		}
+	}
+	if tt.HasText("터보") || tt.HasText("현재 모드는 읽을 수 없어") {
 		t.Errorf("before: texts %q", tt.Texts())
 	}
 	a.modeChoice = customChoice
 	tt.Frame()
-	if !tt.HasText("앱을 종료해도 곡선이 유지됩니다") {
+	if !tt.HasText("고급 설정의 곡선 사용 중. 이 기기는") {
 		t.Errorf("curve on: texts %q", tt.Texts())
+	}
+	a.modeChoice = 0
+	tt.Frame()
+	if !tt.HasText("앱이 만든 곡선 사용 중. 이 기기는") || tt.HasText("현재 곡선은 읽을 수 없어") {
+		t.Errorf("preset on: texts %q", tt.Texts())
+	}
+}
+
+// Where the firmware has curves and no modes, the presets set curves of ours, the
+// same for both fans, and never a mode.
+func TestChoosingAPreset(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
+	var set [][2]fanCurve
+	var fail error
+	newApp := func() *app {
+		return &app{modeChoice: -1, choiceFile: choicePath(), fans: &fakeFans{setCurvesFn: func(c, g fanCurve) error {
+			set = append(set, [2]fanCurve{c, g})
+			return fail
+		}}}
+	}
+	a := newApp()
+	tt := ui.NewTester(a.view, 300, panelHeight+modesHeight)
+	if err := tt.Click("최대"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if len(set) != 1 || set[0][0] != curvePresets[2].curve || set[0][1] != curvePresets[2].curve || a.modeChoice != 2 {
+		t.Fatalf("max: set %v, choice %d", set, a.modeChoice)
+	}
+
+	// It comes back by its label.
+	set = nil
+	if b := newApp(); !b.restoreChoice() || b.modeChoice != 2 || len(set) != 1 || set[0][0] != curvePresets[2].curve {
+		t.Errorf("restored: choice %d, set %v", b.modeChoice, set)
+	}
+
+	// A refusal leaves no choice, as the curves on are unknown.
+	fail = errors.New("refused")
+	if err := tt.Click("조용함"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if a.modeChoice != noChoice || !tt.HasText("적용하지 못했습니다") {
+		t.Errorf("refused: choice %d, texts %q", a.modeChoice, tt.Texts())
+	}
+
+	// A preset kept where there are modes sets nothing.
+	set = nil
+	modes := 0
+	withModes := &app{modeChoice: -1, choiceFile: choicePath(), fans: &fakeFans{
+		setModeFn:   func(uint32) error { modes++; return nil },
+		setCurvesFn: func(c, g fanCurve) error { set = append(set, [2]fanCurve{c, g}); return nil },
+	}}
+	if err := os.WriteFile(choicePath(), []byte(`{"Kind":"preset","Preset":"최대"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if withModes.restoreChoice() || modes != 0 || set != nil {
+		t.Errorf("preset with modes: modes %d, set %v", modes, set)
+	}
+}
+
+func TestPresetsNeitherFailNorWarn(t *testing.T) {
+	for _, p := range curvePresets {
+		if s := p.curve.problem(); s != "" {
+			t.Errorf("%s: %s", p.label, s)
+		}
+		if s := p.curve.warning(); s != "" {
+			t.Errorf("%s: %s", p.label, s)
+		}
 	}
 }
 
 func TestPanelWithModesOnly(t *testing.T) {
 	a := &app{modeChoice: -1, fans: &fakeFans{setModeFn: func(uint32) error { return nil }}}
 	tt := ui.NewTester(a.view, 300, panelHeight+modesHeight)
-	if !tt.HasText("균형") || tt.HasText("고급 설정") {
+	if !tt.HasText("균형") || tt.HasText("고급 설정") || tt.HasText("최대") || tt.HasText("프리셋") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 }
