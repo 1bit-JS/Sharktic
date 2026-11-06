@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/banner.png" alt="Sharktic: PC monitoring &amp; fan control" width="100%"></p>
+
 # Sharktic
 
 Windows 노트북용 트레이 하드웨어 모니터입니다. CPU, GPU, 메모리, 온도를 트레이 아이콘으로 보여 주고, 지원하는 노트북에서는 BIOS에 들어가지 않고도 팬 모드와 온도별 팬 곡선을 바꿀 수 있습니다. 관리자 권한은 필요 없습니다.
