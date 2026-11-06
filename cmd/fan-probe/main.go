@@ -412,8 +412,8 @@ func acpiDevices() []string {
 
 // ---- the verdict ----
 
-// vendorPaths are the fan control ways known from other projects
-// (task/other-vendors.md), by class name.
+// vendorPaths are the fan control ways known from other projects, by class
+// name.
 var vendorPaths = []struct {
 	vendor  string
 	pattern *regexp.Regexp

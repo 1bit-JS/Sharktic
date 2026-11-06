@@ -32,7 +32,7 @@ var procDeviceIoControl = kernel32.NewProc("DeviceIoControl")
 
 // asusModes are the modes to choose from, of the values that the firmware takes.
 // Others stay out: 3 is full speed, and on the G512LI's firmware no branch handles
-// it (task/acpi-g512li.md).
+// it.
 var asusModes = []fanMode{{"조용함", 2}, {"균형", balancedMode}, {"터보", 1}}
 
 // asusControl talks to the firmware of ASUS laptops through the ASUS System
@@ -42,8 +42,7 @@ type asusControl struct {
 	handle   syscall.Handle
 	curvesOn bool // our fan curves are on, in place of the firmware's
 	// hasModes and curveDevices tell whether the firmware has the performance modes
-	// and the fan curves. Some models have curves without modes that ACPI shows
-	// (task/asus-support.md).
+	// and the fan curves. Some models have curves without modes that ACPI shows.
 	hasModes, curveDevices bool
 	// fake answers the calls in place of the driver, in tests.
 	fake func(method, device uint32, params []byte) (uint32, bool)
@@ -182,7 +181,7 @@ func (a *asusControl) leaveCurves() {
 
 // asusDiagDevices are the firmware devices that a diagnosis reads, so that support
 // on other models can be told from a user's report: those Sharktic uses, and those
-// other ASUS models use for the same (task/asus-support.md).
+// other ASUS models use for the same.
 var asusDiagDevices = []struct {
 	id   uint32
 	name string
