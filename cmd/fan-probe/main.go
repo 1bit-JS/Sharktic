@@ -28,7 +28,7 @@ import (
 	"unsafe"
 )
 
-const version = "1"
+const version = "2"
 
 var (
 	kernel32               = syscall.NewLazyDLL("kernel32.dll")
@@ -301,8 +301,8 @@ type wmiClass struct {
 	Name, Super, Guid string
 	Props             []string
 	Methods           []struct {
-		Name   string
-		Params []string
+		Name, Qualifiers string
+		Params           []string
 	}
 }
 
@@ -338,6 +338,7 @@ $vendor = @($all | Where-Object {
       $m = $_
       [pscustomobject]@{
         Name = $m.Name
+        Qualifiers = [string](Q $m.Qualifiers)
         Params = @($m.Parameters | ForEach-Object { "$($_.Name): $($_.CimType) $($_.ReferenceClassName) [$(Q $_.Qualifiers)]" })
       }
     })
@@ -519,7 +520,7 @@ func save(r *report) (string, error) {
 			fmt.Fprintf(&vendor, "  prop   %s\n", p)
 		}
 		for _, m := range c.Methods {
-			fmt.Fprintf(&vendor, "  method %s\n", m.Name)
+			fmt.Fprintf(&vendor, "  method %s [%s]\n", m.Name, m.Qualifiers)
 			for _, p := range m.Params {
 				fmt.Fprintf(&vendor, "         %s\n", p)
 			}
