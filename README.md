@@ -2,6 +2,92 @@
 
 # Sharktic
 
+A tray hardware monitor for Windows laptops. It shows CPU, GPU, memory and temperature as tray icons, and on supported laptops it lets you change the fan mode and temperature-based fan curves without entering the BIOS. No administrator rights are required.
+
+> The app's interface is currently in Korean only. Menu labels below are given in English with the original Korean in parentheses.
+
+## Support by manufacturer
+
+The hardware monitor works on any Windows 10 or 11 PC, regardless of manufacturer. The table below covers **fan control**.
+
+| Manufacturer | Models | Status | Notes |
+| --- | --- | --- | --- |
+| ASUS | ROG, TUF | **Supported** | Performance modes (Silent, Balanced, Turbo) and fan curves. Verified on ROG Strix G512LI; other models should work based on firmware analysis |
+| ASUS | Vivobook, Zenbook | Partial | Fan speed readout only. Performance modes are not supported because their values differ per model |
+| Lenovo | Legion | In progress | Firmware analysis done. Performance modes on most models, fan curves on Gen 7 and 8. Hardware testing pending |
+| Lenovo | LOQ, IdeaPad, ThinkPad | Not investigated | |
+| Dell | Alienware, G Series | Investigated | Control path identified, awaiting development |
+| HP | OMEN, Victus | Investigated | Control path identified, awaiting development. Manual settings reset about every 2 minutes |
+| MSI | Gaming laptops | On hold | Requires talking to the chip directly, which is risky, so it is low priority |
+| Acer | Nitro, Predator | On hold | No usable control path found |
+| Samsung | Galaxy Book | Not investigated | |
+| LG | gram | Not investigated | |
+| Microsoft | Surface | Not investigated | |
+| Hansung | TFG, BossMonster, etc. | Not investigated | |
+
+- **Supported:** works in the current version
+- **Partial:** only some features work
+- **In progress:** support is being developed
+- **Investigated:** the control method is known; development starts once a user can test on real hardware
+- **On hold:** no plans for now
+- **Not investigated:** not looked at yet
+
+Fan control on non-ASUS laptops needs administrator rights because of how their firmware works, so a separate component will be added when support lands. Apple Macs are out of scope.
+
+### Requesting support for your laptop
+
+Run `fan-probe.exe` from [Releases](https://github.com/1bit-JS/Sharktic/releases); it creates a zip file next to itself. Upload that file to [Issues](https://github.com/1bit-JS/Sharktic/issues) along with your laptop's model name. The tool only reads information and never changes settings. The report includes the names of some installed programs, so you can check `report.txt` inside the zip before uploading.
+
+## Installation
+
+1. Download `Sharktic-<version>-windows-amd64.zip` from [Releases](https://github.com/1bit-JS/Sharktic/releases) and extract it to any folder.
+2. Run `Sharktic.exe`. There is no installer; an icon appears in the tray.
+3. The program is unsigned, so if Windows SmartScreen blocks it, click "More info → Run anyway".
+
+Windows puts new icons inside the tray overflow (^); drag them out to keep them always visible.
+
+**Uninstall:** first turn off start at login from the right-click menu, quit the app, then delete the folder and `%AppData%\Sharktic`.
+
+## Features
+
+**Monitor**
+- Four tray icons: PC temperature, CPU, GPU and memory. Temperatures turn orange from 70°C and red from 85°C; usage turns red from 90%
+- Hover for a summary, left-click for a detailed panel (including the top programs by CPU and memory)
+- Values that cannot be measured are shown as `--`
+
+**Fan control** (supported laptops)
+- **Performance modes:** pick one of the laptop firmware's own modes (Silent, Balanced, Turbo, etc.)
+- **Curve presets:** laptops with fan curves but no firmware modes get app-made Silent, Balanced and Max curves
+- **Advanced settings:** set fan speed by temperature for the CPU and GPU fans separately and see it as a graph. Warns when values go below the recommended ones
+- Your choice is saved and reapplied when the app restarts and when the PC wakes from sleep. Turning on "Apply this fan setting at startup" (컴퓨터를 켤 때 이 팬 설정 적용) starts the app automatically at login
+
+**Copy diagnostics** (진단 정보 복사): copies the model name, BIOS version and fan-related firmware values to the clipboard from the right-click menu. Please paste it when reporting a problem.
+
+## Caveats
+
+- Fan control uses undocumented firmware interfaces. Running it alongside a vendor app such as Armoury Crate may cause the two to overwrite each other's settings.
+- Setting fan curves too low can make the device run hot and lose performance.
+- On devices whose firmware does not report the current mode, nothing is shown as selected until you choose one in the app, and switching with the Fn key may make the display out of date.
+- Provided without warranty.
+
+## Development
+
+Requires Go 1.27.3 or later and Windows.
+
+    go test ./...                       # includes tests against this PC's real sensors
+    go test -short ./...                # hardware-independent tests only
+    go tool mygo build -skip-installer  # build/windows-amd64/Sharktic.exe
+    go build -o build/fan-probe.exe ./cmd/fan-probe
+
+## License
+
+MIT License (`LICENSE`). Licenses for the libraries used are in `THIRD_PARTY_NOTICES.txt`.
+
+---
+
+<details>
+<summary><b>한국어</b></summary>
+
 Windows 노트북용 트레이 하드웨어 모니터입니다. CPU, GPU, 메모리, 온도를 트레이 아이콘으로 보여 주고, 지원하는 노트북에서는 BIOS에 들어가지 않고도 팬 모드와 온도별 팬 곡선을 바꿀 수 있습니다. 관리자 권한은 필요 없습니다.
 
 ## 제조사별 지원 현황
@@ -80,3 +166,5 @@ Go 1.27.3 이상과 Windows가 필요합니다.
 ## 라이선스
 
 MIT License (`LICENSE`). 사용한 라이브러리의 라이선스는 `THIRD_PARTY_NOTICES.txt`에 있습니다.
+
+</details>
