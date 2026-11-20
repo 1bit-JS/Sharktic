@@ -1,6 +1,6 @@
 {
   "name": "Sharktic",
   "identifier": "com.local.sharktic",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "out": "build"
 }

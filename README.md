@@ -69,7 +69,7 @@ Windows puts new icons inside the tray overflow (^); drag them out to keep them 
 - **Next:** temperature-based control of desktop fans, ThinkPad fans
 - It can be turned off from the same window at any time, which removes the service. PawnIO is removed only if you choose so, as other programs may use it.
 
-**Copy diagnostics** (진단 정보 복사): copies the model name, BIOS version and fan-related firmware values to the clipboard from the right-click menu. Please paste it when reporting a problem.
+**Copy diagnostics** (진단 정보 복사): copies the model name, BIOS version and fan-related firmware values to the clipboard from the right-click menu, and with advanced fan control on, its service version, the board chip found and the end of the service log. Please paste it when reporting a problem.
 
 ## Caveats
 
@@ -162,7 +162,7 @@ Windows PC와 노트북용 트레이 하드웨어 모니터입니다. CPU, GPU, 
 - **다음:** 데스크톱 팬의 온도별 제어, ThinkPad 팬
 - 같은 창에서 언제든 끌 수 있고, 끄면 서비스를 제거합니다. PawnIO는 다른 프로그램도 쓸 수 있어서 선택했을 때만 지웁니다.
 
-**진단 정보 복사:** 오른쪽 클릭 메뉴에서 모델명, BIOS 버전과 팬 관련 펌웨어 값을 클립보드에 복사합니다. 문제를 알릴 때 붙여 넣어 주세요.
+**진단 정보 복사:** 오른쪽 클릭 메뉴에서 모델명, BIOS 버전과 팬 관련 펌웨어 값을 클립보드에 복사합니다. 고급 팬 제어를 켰다면 서비스 버전, 찾은 메인보드 칩, 서비스 로그의 마지막 줄도 함께 복사합니다. 문제를 알릴 때 붙여 넣어 주세요.
 
 ## 주의
 
