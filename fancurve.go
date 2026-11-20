@@ -287,8 +287,10 @@ func (a *app) curveView(c *ui.Context) {
 	problem, warning := curvesProblem(a.curves), ofEitherFan(a.curves, fanCurve.warning)
 
 	ui.Column(c).Fill().Background(t.Surface).Padding(16).Gap(12).Children(func() {
+		cpuFan, cpuOK := s.fan(cpuFanName)
+		gpuFan, gpuOK := s.fan(gpuFanName)
 		note(fmt.Sprintf("지금: CPU 팬 %s · GPU 팬 %s · PC %s · GPU %s",
-			rpm(s.CPUFan, s.HasCPUFan), rpm(s.GPUFan, s.HasGPUFan),
+			rpm(cpuFan, cpuOK), rpm(gpuFan, gpuOK),
 			degrees(s.Temp, s.HasTemp), degrees(s.GPUTemp, s.HasGPUTemp)))
 		ui.Tabs(c.Key("fan"), &a.curveTab, "CPU 팬", "GPU 팬")
 

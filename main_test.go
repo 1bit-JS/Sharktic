@@ -83,9 +83,9 @@ func TestViewWithoutFans(t *testing.T) {
 }
 
 func TestViewShowsFansWithoutModes(t *testing.T) {
-	a := &app{snap: Snapshot{CPUFan: 3800, HasCPUFan: true}}
+	a := &app{snap: Snapshot{Fans: []FanSpeed{{cpuFanName, 3800}}}}
 	tt := ui.NewTester(a.view, 300, panelHeight)
-	if !tt.HasText("CPU 3800 rpm · GPU --") || tt.HasText("균형") {
+	if !tt.HasText("CPU 3800 rpm") || tt.HasText("균형") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 }
@@ -579,7 +579,7 @@ func TestKernelGPUsReadThisMachine(t *testing.T) {
 	if !s.read(&got) {
 		t.Skip("no GPU tells its temperature")
 	}
-	t.Logf("%d adapters, temperature %v, fan %d (%v)", len(s.adapters), got.GPUTemp, got.GPUFan, got.HasGPUFan)
+	t.Logf("%d adapters, temperature %v, fans %v", len(s.adapters), got.GPUTemp, got.Fans)
 	if got.GPUTemp < 10 || got.GPUTemp > 110 {
 		t.Errorf("temperature %v", got.GPUTemp)
 	}
@@ -848,8 +848,8 @@ func TestFansReadThisMachine(t *testing.T) {
 	}
 	var got Snapshot
 	fans.read(&got)
-	t.Logf("CPU %d (%v), GPU %d (%v), modes %v", got.CPUFan, got.HasCPUFan, got.GPUFan, got.HasGPUFan, fans.modes())
-	if got.CPUFan < 0 || got.CPUFan > atkFanMax*100 || got.GPUFan < 0 || got.GPUFan > atkFanMax*100 {
+	t.Logf("fans %v, modes %v", got.Fans, fans.modes())
+	if slices.ContainsFunc(got.Fans, func(f FanSpeed) bool { return f.RPM < 0 || f.RPM > atkFanMax*100 }) {
 		t.Errorf("fans %+v", got)
 	}
 }
@@ -1214,5 +1214,25 @@ func TestDiagnosisAsksTheBackend(t *testing.T) {
 	d := diagnose(&fakeFans{setCurvesFn: func(c, g fanCurve) error { return nil }}, "test")
 	if d.FanBackend != "fake" || d.Modes || !d.Curves || !strings.Contains(d.text(), "fake line\n") {
 		t.Errorf("%+v", d)
+	}
+}
+
+func TestSetFanReplacesByName(t *testing.T) {
+	var s Snapshot
+	s.setFan(gpuFanName, 1800) // from the graphics kernel
+	s.setFan(cpuFanName, 3800)
+	s.setFan(gpuFanName, 4100) // from the firmware, which knows better
+	if want := []FanSpeed{{gpuFanName, 4100}, {cpuFanName, 3800}}; !slices.Equal(s.Fans, want) {
+		t.Errorf("fans %v", s.Fans)
+	}
+	if v, ok := s.fan(cpuFanName); !ok || v != 3800 {
+		t.Errorf("cpu %v %v", v, ok)
+	}
+	if _, ok := s.fan("SYS_FAN1"); ok {
+		t.Error("found a fan not set")
+	}
+	s.setFan("SYS_FAN1", 900)
+	if got := s.fansLine(); got != "CPU 3800 rpm · GPU 4100 rpm · SYS_FAN1 900 rpm" {
+		t.Errorf("line %q", got)
 	}
 }

@@ -110,14 +110,14 @@ func (a *asusControl) name() string { return "asus" }
 // read adds the speeds of the fans that the firmware has, keeping what was read
 // elsewhere of the others.
 func (a *asusControl) read(out *Snapshot) {
-	if raw, ok := a.callValue(atkGet, atkCPUFan, 0); ok {
-		if v, ok := fanRPM(raw); ok {
-			out.CPUFan, out.HasCPUFan = v, true
-		}
-	}
-	if raw, ok := a.callValue(atkGet, atkGPUFan, 0); ok {
-		if v, ok := fanRPM(raw); ok {
-			out.GPUFan, out.HasGPUFan = v, true
+	for _, f := range []struct {
+		device uint32
+		name   string
+	}{{atkCPUFan, cpuFanName}, {atkGPUFan, gpuFanName}} {
+		if raw, ok := a.callValue(atkGet, f.device, 0); ok {
+			if v, ok := fanRPM(raw); ok {
+				out.setFan(f.name, v)
+			}
 		}
 	}
 }

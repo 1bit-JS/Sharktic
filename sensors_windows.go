@@ -423,7 +423,7 @@ func NewSampler() *Sampler {
 // and the graphics kernel for what they lack.
 func (s *Sampler) readGPU(out *Snapshot) {
 	s.readVendorGPU(out)
-	if out.HasGPUTemp && out.HasGPUFan {
+	if _, fan := out.fan(gpuFanName); out.HasGPUTemp && fan {
 		return
 	}
 	if now := time.Now(); s.kernelGPUs == nil && !now.Before(s.kernelGPUsRetryAt) {

@@ -103,8 +103,8 @@ func (s *kernelGPUs) read(out *Snapshot) bool {
 		out.GPUTemp, out.HasGPUTemp = float64(hottest.temperature)/10, true
 	}
 	// 0 is also what a stopped fan reports, but more often a GPU without one.
-	if !out.HasGPUFan && fan > 0 {
-		out.GPUFan, out.HasGPUFan = int(fan), true
+	if _, known := out.fan(gpuFanName); !known && fan > 0 {
+		out.setFan(gpuFanName, int(fan))
 	}
 	return true
 }

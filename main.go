@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -70,8 +71,9 @@ type Snapshot struct {
 	DiskTemp    float64
 	HasDiskTemp bool
 
-	CPUFan, GPUFan       int // in RPM
-	HasCPUFan, HasGPUFan bool
+	// Fans are the fans whose speed is known, in the order they were found. A
+	// laptop has CPU and GPU, a desktop board as many as it has headers.
+	Fans []FanSpeed
 
 	// TopCPU and TopMemory are the programs that use the most.
 	TopCPU, TopMemory []ProcessUse
@@ -245,6 +247,61 @@ func rpm(v int, ok bool) string {
 	return fmt.Sprintf("%d rpm", v)
 }
 
+// FanSpeed is the speed of one fan.
+type FanSpeed struct {
+	Name string // as a person knows it, as "CPU"
+	RPM  int
+}
+
+// Names of the fans that more than one source tells, so that one replaces the
+// other.
+const (
+	cpuFanName = "CPU"
+	gpuFanName = "GPU"
+)
+
+// setFan sets the speed of a fan, in place of what an earlier source told of it.
+func (s *Snapshot) setFan(name string, v int) {
+	for i := range s.Fans {
+		if s.Fans[i].Name == name {
+			s.Fans[i].RPM = v
+			return
+		}
+	}
+	s.Fans = append(s.Fans, FanSpeed{name, v})
+}
+
+// fan returns the speed of a fan by its name.
+func (s *Snapshot) fan(name string) (int, bool) {
+	for _, f := range s.Fans {
+		if f.Name == name {
+			return f.RPM, true
+		}
+	}
+	return 0, false
+}
+
+// fansLine tells the speeds of all fans, as "CPU 3800 rpm · GPU 4100 rpm": CPU
+// and GPU first, whichever source found them first, and then the others.
+func (s *Snapshot) fansLine() string {
+	rank := func(f FanSpeed) int {
+		switch f.Name {
+		case cpuFanName:
+			return 0
+		case gpuFanName:
+			return 1
+		}
+		return 2
+	}
+	fans := slices.Clone(s.Fans)
+	slices.SortStableFunc(fans, func(a, b FanSpeed) int { return rank(a) - rank(b) })
+	parts := make([]string, len(fans))
+	for i, f := range fans {
+		parts[i] = f.Name + " " + rpm(f.RPM, true)
+	}
+	return strings.Join(parts, " · ")
+}
+
 // displayName tells a program, and how many processes it runs if several.
 func (u ProcessUse) displayName() string {
 	if u.Count > 1 {
@@ -318,12 +375,16 @@ func (a *app) hasFanControl() bool { return len(a.modes()) > 0 || a.hasCurves() 
 // there are any.
 func (a *app) fanSection(c *ui.Context) {
 	s, t := a.snap, c.Theme()
-	if !a.hasFanControl() && !s.HasCPUFan && !s.HasGPUFan {
+	if !a.hasFanControl() && len(s.Fans) == 0 {
 		return
 	}
 	ui.Column(c).Gap(4).Children(func() {
 		ui.Text(c, "팬").Bold()
-		ui.Text(c, "CPU "+rpm(s.CPUFan, s.HasCPUFan)+" · GPU "+rpm(s.GPUFan, s.HasGPUFan)).FontSize(12).TextColor(t.TextMuted)
+		line := s.fansLine()
+		if line == "" {
+			line = "속도를 읽을 수 없습니다"
+		}
+		ui.Text(c, line).FontSize(12).TextColor(t.TextMuted)
 		if !a.hasFanControl() {
 			return
 		}
