@@ -466,7 +466,7 @@ for programs that talk to it only through its device interface, as Sharktic
 does. Source: https://github.com/namazso/PawnIO
 
 ------------------------------------------------------------------------
-PawnIO.Modules 0.2.12 (pawnio/IntelMSR.bin, pawnio/AMDFamily17.bin)
+PawnIO.Modules 0.2.12 (pawnio/IntelMSR.bin, pawnio/AMDFamily17.bin, pawnio/LpcIO.bin)
 ------------------------------------------------------------------------
 
 Copyright (C) 2025 namazso <admin@namazso.eu>

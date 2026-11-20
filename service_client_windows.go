@@ -151,4 +151,8 @@ func (s *serviceSensor) read(out *Snapshot) {
 	if r.HasCPUTemp {
 		out.CPUTemp, out.HasCPUTemp = r.CPUTemp, true
 	}
+	for _, f := range r.Fans {
+		out.setFan(f.Name, f.RPM)
+	}
+	out.SuperIO = r.SuperIO
 }

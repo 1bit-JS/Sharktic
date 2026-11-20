@@ -1372,3 +1372,177 @@ func TestOpenOwnImage(t *testing.T) {
 		t.Error("renamed while open")
 	}
 }
+
+// fakeChip stands in for a Super I/O chip behind LpcIO: its configuration
+// registers by logical device, its monitor's registers by bank, and whether it
+// is in the configuration mode.
+type fakeChip struct {
+	port    uint16 // configuration port
+	enter   []byte // the keys that enter the configuration mode
+	keys    []byte
+	inConf  bool
+	reg     byte
+	ldn     byte
+	conf    map[byte]map[byte]byte // by logical device
+	addr    uint16
+	monReg  byte
+	bank    byte
+	mon     map[byte]map[byte]byte // by bank
+	slot    int
+	written []string
+}
+
+func (f *fakeChip) selectSlot(slot int) error { f.slot = slot; return nil }
+func (f *fakeChip) findBars() error           { return nil }
+
+func (f *fakeChip) sioIn(reg byte) (byte, error) {
+	if !f.inConf || sioSlotPorts[f.slot] != f.port {
+		return 0xFF, nil
+	}
+	if reg == sioLogicalDev {
+		return f.ldn, nil
+	}
+	if v, ok := f.conf[0][reg]; ok { // global registers, as the chip ID
+		return v, nil
+	}
+	return f.conf[f.ldn][reg], nil
+}
+
+func (f *fakeChip) sioOut(reg, v byte) error {
+	f.written = append(f.written, fmt.Sprintf("sio %02X=%02X", reg, v))
+	if !f.inConf || sioSlotPorts[f.slot] != f.port {
+		return nil
+	}
+	switch reg {
+	case sioLogicalDev:
+		f.ldn = v
+	case 0x02:
+		f.inConf = false // ITE's exit
+	}
+	return nil
+}
+
+func (f *fakeChip) in(port uint16) (byte, error) {
+	if port == f.addr+1 {
+		if f.monReg == nuvotonBankSelect {
+			return f.bank, nil
+		}
+		return f.mon[f.bank][f.monReg], nil
+	}
+	return 0xFF, nil
+}
+
+func (f *fakeChip) out(port uint16, v byte) error {
+	switch {
+	case port == sioSlotPorts[f.slot] && port == f.port:
+		if v == 0xAA && f.inConf && len(f.enter) == 2 {
+			f.inConf = false // Nuvoton's exit
+			return nil
+		}
+		f.keys = append(f.keys, v)
+		if len(f.keys) >= len(f.enter) && bytes.Equal(f.keys[len(f.keys)-len(f.enter):], f.enter) {
+			f.inConf, f.keys = true, nil
+		}
+	case port == f.addr:
+		f.monReg = v
+	case port == f.addr+1:
+		f.written = append(f.written, fmt.Sprintf("mon %02X=%02X", f.monReg, v))
+		if f.monReg == nuvotonBankSelect {
+			f.bank = v
+		} else {
+			f.mon[f.bank][f.monReg] = v
+		}
+	}
+	return nil
+}
+
+func TestSuperIONuvoton(t *testing.T) {
+	f := &fakeChip{
+		port: 0x2E, enter: []byte{0x87, 0x87},
+		conf: map[byte]map[byte]byte{
+			0:                    {0x20: 0xD4, 0x21: 0x2B}, // NCT6798D, revision B
+			nuvotonMonitorDevice: {sioActivate: 1, 0x60: 0x02, 0x61: 0x90},
+		},
+		addr: 0x0295,
+		bank: 0x80, // another bank, which is put back
+		mon: map[byte]map[byte]byte{
+			0x80:           {},
+			nuvotonFanBank: {0xC0: 0x04, 0xC1: 0xB0, 0xC2: 0x00, 0xC3: 0x00, 0xCE: 0x03, 0xCF: 0x20},
+		},
+	}
+	chip, note, err := probeSuperIO(f)
+	if err != nil || chip == nil {
+		t.Fatalf("chip %v note %q err %v", chip, note, err)
+	}
+	if chip.name != "Nuvoton NCT6798D" || chip.addr != 0x295 || len(chip.fans) != 7 || f.inConf {
+		t.Errorf("%+v, in configuration %v", chip, f.inConf)
+	}
+	rpms, err := chip.readFans(f)
+	if err != nil || rpms[0] != 1200 || rpms[1] != 0 || rpms[6] != 800 {
+		t.Errorf("rpms %v %v", rpms, err)
+	}
+	if f.bank != 0x80 {
+		t.Errorf("bank left at %#x", f.bank)
+	}
+}
+
+func TestSuperIOITE(t *testing.T) {
+	f := &fakeChip{
+		port: 0x2E, enter: []byte{0x87, 0x01, 0x55, 0x55},
+		conf: map[byte]map[byte]byte{
+			0:                {0x20: 0x86, 0x21: 0x88}, // IT8688E
+			iteMonitorDevice: {sioActivate: 1, 0x60: 0x0A, 0x61: 0x40},
+		},
+		addr: 0x0A45,
+		mon: map[byte]map[byte]byte{0: {
+			iteFanMainCtrl: 0x30,             // fans 1 and 2 on
+			iteFan16Bit:    0x13,             // fans 1, 2 count 16 bits; fan 4 on
+			0x0D:           0x50, 0x18: 0x02, // fan 1: 0x250 = 592 → 1140 RPM
+			0x0E: 0xFF, 0x19: 0xFF, // fan 2 stopped
+			0x80: 0x00, 0x81: 0x02, // fan 4: 0x200 → 1318 RPM
+		}},
+	}
+	chip, _, err := probeSuperIO(f)
+	if err != nil || chip == nil {
+		t.Fatalf("chip %v err %v", chip, err)
+	}
+	if chip.name != "ITE IT8688E" || chip.addr != 0x0A45 || !slices.Equal(chip.fans, []int{0, 1, 3}) || f.inConf {
+		t.Errorf("%+v, in configuration %v", chip, f.inConf)
+	}
+	rpms, err := chip.readFans(f)
+	if err != nil || !slices.Equal(rpms, []int{1140, 0, 1318}) {
+		t.Errorf("rpms %v %v", rpms, err)
+	}
+	// Reading writes nothing to the monitor.
+	for _, w := range f.written {
+		if strings.HasPrefix(w, "mon") {
+			t.Errorf("wrote %s", w)
+		}
+	}
+}
+
+func TestSuperIONoneOrUnknown(t *testing.T) {
+	if chip, note, err := probeSuperIO(&fakeChip{port: 0x4E}); chip != nil || err != nil || note != "칩 없음" {
+		t.Errorf("none: %v %q %v", chip, note, err)
+	}
+	f := &fakeChip{port: 0x4E, enter: []byte{0x87, 0x87}, conf: map[byte]map[byte]byte{0: {0x20: 0x12, 0x21: 0x34}}}
+	chip, note, err := probeSuperIO(f)
+	if chip != nil || err != nil || !strings.Contains(note, "0x1234@4E") || f.inConf {
+		t.Errorf("unknown: %v %q %v, in configuration %v", chip, note, err, f.inConf)
+	}
+}
+
+func TestITEFansOn(t *testing.T) {
+	// Fan 3 is on but counts in 8 bits, which is not changed: left out.
+	if got := iteFansOn(0x70, 0x33, 5); !slices.Equal(got, []int{0, 1, 3, 4}) {
+		t.Errorf("%v", got)
+	}
+	if got := iteFansOn(0x70, 0x37, 3); !slices.Equal(got, []int{0, 1, 2}) {
+		t.Errorf("three fans: %v", got)
+	}
+}
+
+func TestNoBatteryThisMachine(t *testing.T) {
+	// Logs only: whether Super I/O would be looked for here.
+	t.Logf("no battery (a desktop): %v", systemHasNoBattery())
+}

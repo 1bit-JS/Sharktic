@@ -187,9 +187,12 @@ func (a *app) advancedOffView(c *ui.Context, heading func(string), muted func(st
 	})
 	ui.Column(c).Gap(6).Children(func() {
 		heading("켜면 바로 되는 것")
-		bullets("CPU 온도: CPU가 직접 재는 값이에요. PC 온도가 '--'로 나오는 데스크톱에서도 보여요.")
+		bullets(
+			"CPU 온도: CPU가 직접 재는 값이에요. PC 온도가 '--'로 나오는 데스크톱에서도 보여요.",
+			"데스크톱 메인보드의 팬 속도: Nuvoton, ITE 칩을 쓰는 보드에서 읽어요. 아직 시험 중인 기능이에요.",
+		)
 		heading("차례로 추가될 것")
-		bullets("데스크톱 메인보드 팬 속도 읽기와 온도별 제어", "ThinkPad 등 EC 방식 노트북의 팬 제어")
+		bullets("데스크톱 메인보드 팬의 온도별 제어", "ThinkPad 등 EC 방식 노트북의 팬 제어")
 	})
 	ui.Column(c).Gap(6).Children(func() {
 		heading("설치되는 것")
@@ -221,6 +224,9 @@ func (a *app) advancedOnView(c *ui.Context, heading func(string), muted func(str
 			muted("CPU 온도 " + degrees(s.CPUTemp, true))
 		default:
 			muted("이 CPU의 온도는 아직 읽을 수 없어요.")
+		}
+		if s.ServiceRunning && s.SuperIO != "" {
+			muted("메인보드 칩: " + s.SuperIO)
 		}
 	})
 	ui.Column(c).Gap(6).Children(func() {

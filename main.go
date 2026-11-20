@@ -76,6 +76,8 @@ type Snapshot struct {
 	// the app version it runs.
 	ServiceRunning bool
 	ServiceVersion string
+	// SuperIO tells the board's monitor chip the service found, or why none.
+	SuperIO string
 
 	// DiskTemp is the hottest internal SSD's.
 	DiskTemp    float64

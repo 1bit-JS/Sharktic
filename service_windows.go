@@ -25,7 +25,7 @@ const (
 	servicePipe        = `\\.\pipe\SharkticService`
 	// serviceProtocol changes when a request or a reply does, so that the app
 	// can tell an older service to be updated.
-	serviceProtocol = 1
+	serviceProtocol = 2
 
 	// servicePipeSDDL lets SYSTEM and administrators in fully, and the user
 	// signed in at the console read and write; no one over the network.
@@ -43,7 +43,11 @@ type serviceReply struct {
 	Version    string  `json:"version,omitempty"`
 	CPUTemp    float64 `json:"cpuTemp,omitempty"`
 	HasCPUTemp bool    `json:"hasCPUTemp,omitempty"`
-	Error      string  `json:"error,omitempty"`
+	// Fans are the board's, from its Super I/O chip.
+	Fans []FanSpeed `json:"fans,omitempty"`
+	// SuperIO names the chip found, or tells why there is none.
+	SuperIO string `json:"superIO,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // serviceState is the hardware the service has opened, which it opens again
@@ -55,6 +59,10 @@ type serviceState struct {
 	cpu       *cpuThermal
 	cpuErr    error
 	cpuRetry  time.Time
+	sio       *superIO
+	sioNote   string
+	sioRetry  time.Time
+	sioDone   bool // looked for, and none to look for again
 	lastRead  time.Time
 	lastReply serviceReply
 }
@@ -91,9 +99,29 @@ func (s *serviceState) read() serviceReply {
 			log.Println("cpu thermal:", s.cpuErr)
 		}
 	}
-	r := serviceReply{Protocol: serviceProtocol}
+	if s.sio == nil && !s.sioDone && !now.Before(s.sioRetry) {
+		s.sioRetry = now.Add(serviceRetryEvery)
+		sio, note, err := openSuperIO()
+		switch {
+		case err != nil:
+			log.Println("super i/o:", err)
+			s.sioNote = "오류: " + err.Error()
+		case sio == nil:
+			s.sioNote, s.sioDone = note, true // looking again would not find one
+		default:
+			s.sio, s.sioNote = sio, note
+		}
+	}
+	r := serviceReply{Protocol: serviceProtocol, SuperIO: s.sioNote}
 	if s.cpu != nil {
 		r.CPUTemp, r.HasCPUTemp = s.cpu.temperature()
+	}
+	if s.sio != nil {
+		fans, err := s.sio.fans()
+		if err != nil {
+			log.Println("super i/o fans:", err)
+		}
+		r.Fans = fans
 	}
 	s.lastReply = r
 	return r
@@ -105,6 +133,10 @@ func (s *serviceState) close() {
 	if s.cpu != nil {
 		s.cpu.close()
 		s.cpu = nil
+	}
+	if s.sio != nil {
+		s.sio.close()
+		s.sio = nil
 	}
 }
 
