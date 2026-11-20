@@ -38,6 +38,8 @@ type cpuThermal struct {
 	read   func() (float64, error)
 	tjMax  float64 // Intel
 	pciMu  windows.Handle
+	// source tells where the temperature comes from, for a diagnosis.
+	source string
 }
 
 // cpuIdentity is the vendor and family of the first CPU.
@@ -80,6 +82,7 @@ func openCPUThermal() (*cpuThermal, error) {
 			return nil, fmt.Errorf("no TjMax (%v, %v)", tj, err)
 		}
 		t.tjMax = tj
+		t.source = fmt.Sprintf("Intel MSR, TjMax %.0f°C", tj)
 		t.read = t.readIntel
 		return t, nil
 	case vendor == "AuthenticAMD" && family >= 0x17:
@@ -97,6 +100,7 @@ func openCPUThermal() (*cpuThermal, error) {
 		}
 		t := &cpuThermal{module: m, pciMu: mu}
 		t.read = t.readAMD
+		t.source = fmt.Sprintf("AMD SMN Tctl, family %#x", family)
 		return t, nil
 	}
 	return nil, fmt.Errorf("CPU %q family %d is not supported", vendor, family)

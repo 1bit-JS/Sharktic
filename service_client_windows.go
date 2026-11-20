@@ -154,5 +154,5 @@ func (s *serviceSensor) read(out *Snapshot) {
 	for _, f := range r.Fans {
 		out.setFan(f.Name, f.RPM)
 	}
-	out.SuperIO = r.SuperIO
+	out.SuperIO, out.CPUSource = r.SuperIO, r.CPUSource
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 	"unsafe"
@@ -47,7 +48,9 @@ type serviceReply struct {
 	Fans []FanSpeed `json:"fans,omitempty"`
 	// SuperIO names the chip found, or tells why there is none.
 	SuperIO string `json:"superIO,omitempty"`
-	Error   string `json:"error,omitempty"`
+	// CPUSource tells where the CPU temperature comes from, or why there is none.
+	CPUSource string `json:"cpuSource,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // serviceState is the hardware the service has opened, which it opens again
@@ -97,6 +100,8 @@ func (s *serviceState) read() serviceReply {
 		s.cpu, s.cpuErr = openCPUThermal()
 		if s.cpuErr != nil {
 			log.Println("cpu thermal:", s.cpuErr)
+		} else {
+			log.Println("cpu thermal:", s.cpu.source)
 		}
 	}
 	if s.sio == nil && !s.sioDone && !now.Before(s.sioRetry) {
@@ -111,8 +116,15 @@ func (s *serviceState) read() serviceReply {
 		default:
 			s.sio, s.sioNote = sio, note
 		}
+		log.Println("super i/o:", s.sioNote)
 	}
 	r := serviceReply{Protocol: serviceProtocol, SuperIO: s.sioNote}
+	switch {
+	case s.cpu != nil:
+		r.CPUSource = s.cpu.source
+	case s.cpuErr != nil:
+		r.CPUSource = "오류: " + s.cpuErr.Error()
+	}
 	if s.cpu != nil {
 		r.CPUTemp, r.HasCPUTemp = s.cpu.temperature()
 	}
@@ -219,12 +231,41 @@ func (s *sharkticService) Execute(_ []string, requests <-chan svc.ChangeRequest,
 	}
 }
 
+// maxServiceLog is the size at which the log starts over, keeping the last
+// one as service.log.old.
+const maxServiceLog = 1 << 20
+
+// serviceLogPath is in the service's folder, which only administrators can
+// change, so that no one can put a link there for the service to write
+// through. Users can read it, for a diagnosis.
+func serviceLogPath() (string, error) {
+	dir, err := serviceDir()
+	return filepath.Join(dir, "service.log"), err
+}
+
+func openServiceLog() (*os.File, error) {
+	path, err := serviceLogPath()
+	if err != nil {
+		return nil, err
+	}
+	if st, err := os.Stat(path); err == nil && st.Size() > maxServiceLog {
+		os.Rename(path, path+".old")
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+}
+
 // runService runs as the service, when Sharktic.exe is started with
 // --service by the service manager.
 func runService(version string) {
 	if inService, err := svc.IsWindowsService(); err != nil || !inService {
 		os.Exit(2) // only the service manager starts it
 	}
+	if f, err := openServiceLog(); err == nil {
+		defer f.Close()
+		log.SetOutput(f)
+	}
+	log.Printf("Sharktic service %s, protocol %d, started", version, serviceProtocol)
+	defer log.Println("stopped")
 	if err := svc.Run(serviceName, &sharkticService{state: &serviceState{version: version}}); err != nil {
 		log.Println("service:", err)
 		os.Exit(1)

@@ -16,6 +16,9 @@ type diagnosis struct {
 	Lines      []string
 	// Modes and Curves tell what Sharktic turned on.
 	Modes, Curves bool
+	// Advanced tells of advanced fan control: its service, the hardware it
+	// found, and its last log lines.
+	Advanced []string
 }
 
 // text is the report, to paste in an issue or a message: plain lines, the
@@ -54,6 +57,12 @@ func (d diagnosis) text() string {
 		b.WriteString("\n")
 	}
 	for _, l := range d.Lines {
+		b.WriteString(l + "\n")
+	}
+	if len(d.Advanced) > 0 {
+		b.WriteString("\n[고급 팬 제어]\n")
+	}
+	for _, l := range d.Advanced {
 		b.WriteString(l + "\n")
 	}
 	return b.String()

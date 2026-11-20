@@ -76,8 +76,9 @@ type Snapshot struct {
 	// the app version it runs.
 	ServiceRunning bool
 	ServiceVersion string
-	// SuperIO tells the board's monitor chip the service found, or why none.
-	SuperIO string
+	// SuperIO tells the board's monitor chip the service found, or why none,
+	// and CPUSource where the CPU temperature comes from.
+	SuperIO, CPUSource string
 
 	// DiskTemp is the hottest internal SSD's.
 	DiskTemp    float64
@@ -664,7 +665,9 @@ func (a *app) addTray(m *meter) {
 // copyDiagnosis puts the report of the diagnosis on the clipboard, for the user
 // to paste in a message, and tells so.
 func (a *app) copyDiagnosis() {
-	mygo.Clipboard.WriteText(a.diagnose().text())
+	d := a.diagnose()
+	d.Advanced = a.advancedDiagnosis()
+	mygo.Clipboard.WriteText(d.text())
 	n := mygo.NewNotification(mygo.NotificationOptions{
 		ID:     "diagnosis",
 		Title:  "진단 정보를 복사했습니다",

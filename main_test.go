@@ -1563,3 +1563,30 @@ func TestNoBatteryThisMachine(t *testing.T) {
 	// Logs only: whether Super I/O would be looked for here.
 	t.Logf("no battery (a desktop): %v", systemHasNoBattery())
 }
+
+func TestLastLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log")
+	os.WriteFile(path, []byte("a\r\nb\r\nc\r\n"), 0o644)
+	if got := lastLines(path, 2); !slices.Equal(got, []string{"b", "c"}) {
+		t.Errorf("%q", got)
+	}
+	long := strings.Repeat("x", 5000) + "\nlast one\n"
+	os.WriteFile(path, []byte(long), 0o644)
+	if got := lastLines(path, 8); !slices.Equal(got, []string{"last one"}) {
+		t.Errorf("long: %q", got)
+	}
+	if got := lastLines(filepath.Join(t.TempDir(), "none"), 8); got != nil {
+		t.Errorf("missing: %q", got)
+	}
+}
+
+func TestDiagnosisTellsAdvanced(t *testing.T) {
+	d := diagnosis{App: "Sharktic", Advanced: []string{"service:      0.2.0", "board chip:   Nuvoton NCT6798D"}}
+	text := d.text()
+	if !strings.Contains(text, "[고급 팬 제어]\nservice:      0.2.0\nboard chip:   Nuvoton NCT6798D\n") {
+		t.Errorf("%s", text)
+	}
+	if strings.Contains((diagnosis{}).text(), "고급 팬 제어") {
+		t.Error("section without lines")
+	}
+}
