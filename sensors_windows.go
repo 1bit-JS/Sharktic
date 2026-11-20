@@ -409,6 +409,7 @@ type Sampler struct {
 	kernelGPUs        *kernelGPUs
 	kernelGPUsRetryAt time.Time
 	disks             diskSensor
+	service           serviceSensor
 	fans              fanBackend
 	processes         processSensor
 }
@@ -465,6 +466,7 @@ func (s *Sampler) Read() Snapshot {
 	out.MemUsed, out.MemTotal, _ = readMemory()
 	s.readGPU(&out)
 	s.disks.read(&out, time.Now())
+	s.service.read(&out)
 	if s.fans != nil {
 		s.fans.read(&out)
 	}

@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"log"
 	"math"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -67,6 +68,15 @@ type Snapshot struct {
 	HasGPUTemp          bool
 	VRAMUsed, VRAMTotal uint64 // VRAMTotal is 0 where the size is unknown
 
+	// CPUTemp is the CPU package's, from its own registers, which only the
+	// service reads.
+	CPUTemp    float64
+	HasCPUTemp bool
+	// ServiceRunning tells that the service answered, and ServiceVersion is
+	// the app version it runs.
+	ServiceRunning bool
+	ServiceVersion string
+
 	// DiskTemp is the hottest internal SSD's.
 	DiskTemp    float64
 	HasDiskTemp bool
@@ -96,7 +106,7 @@ func newMeters() []*meter {
 	return []*meter{
 		{
 			id: "sharktic", label: "PC", color: tempColor,
-			read: func(s Snapshot) (float64, bool) { return s.Temp, s.HasTemp },
+			read: pcTemp,
 		},
 		{
 			id: "sharktic-cpu", label: "CPU", color: usageColor(color.NRGBA{R: 30, G: 100, B: 200, A: 255}),
@@ -118,6 +128,7 @@ type app struct {
 	meters      []*meter
 	panel       *mygo.Window // the open panel, or nil
 	curveWindow *mygo.Window // the open window of the fan curves, or nil
+	advanced    advancedState
 	snap        Snapshot
 
 	// fans is the way to the fans of this PC, or nil.
@@ -195,6 +206,15 @@ func percent(v float64, ok bool) string {
 		return "--"
 	}
 	return fmt.Sprintf("%.0f%%", v)
+}
+
+// pcTemp is the PC icon's temperature: the ACPI thermal zone's, or the CPU's
+// where the board tells no zone, as many desktops.
+func pcTemp(s Snapshot) (float64, bool) {
+	if s.HasTemp {
+		return s.Temp, true
+	}
+	return s.CPUTemp, s.HasCPUTemp
 }
 
 func degrees(v float64, ok bool) string {
@@ -496,6 +516,7 @@ func (a *app) view(c *ui.Context) {
 					})
 				}
 				a.fanSection(c)
+				a.advancedSection(c)
 				ui.Divider(c)
 				ranking("CPU 점유 상위", s.TopCPU, func(u ProcessUse) string { return fmt.Sprintf("%.1f%%", u.CPU) })
 				ranking("메모리 점유 상위", s.TopMemory, func(u ProcessUse) string { return memorySize(u.Memory) })
@@ -528,6 +549,9 @@ func (a *app) apply(s Snapshot) {
 	}
 	if a.curveWindow != nil {
 		a.curveWindow.Update(func() {})
+	}
+	if a.advanced.window != nil {
+		a.advanced.window.Update(func() {})
 	}
 }
 
@@ -604,6 +628,7 @@ func (a *app) addTray(m *meter) {
 	menu := mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "자세히 보기", Click: func(*mygo.MenuItem, *mygo.Window) { a.toggle(m.tray) }},
 		openAtLogin,
+		{Label: "고급 팬 제어…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openAdvancedWindow() }},
 		{Label: "진단 정보 복사", Click: func(*mygo.MenuItem, *mygo.Window) { a.copyDiagnosis() }},
 		mygo.Separator(),
 		{Label: "종료", Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
@@ -678,6 +703,7 @@ func (a *app) ready() {
 			})
 		})
 	}
+	a.advanced.installed, _ = serviceStatus()
 	a.meters = newMeters()
 	for _, m := range a.meters {
 		a.addTray(m)
@@ -702,6 +728,16 @@ func (a *app) ready() {
 }
 
 func main() {
+	// The service and the elevated setup run without the app's windows.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case serviceFlag:
+			runService(mygo.App.Version())
+			return
+		case enableFlag, disableFlag:
+			os.Exit(runSetup(os.Args[1:]))
+		}
+	}
 	a := &app{}
 	mygo.App.SetName(appName)
 	if !mygo.App.RequestSingleInstanceLock() {

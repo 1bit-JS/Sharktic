@@ -77,8 +77,104 @@ func TestFanRPM(t *testing.T) {
 }
 
 func TestViewWithoutFans(t *testing.T) {
-	if tt := ui.NewTester((&app{}).view, 300, panelHeight); tt.HasText("팬") || tt.HasText("균형") {
+	// No fan section, but the way to advanced fan control.
+	if tt := ui.NewTester((&app{}).view, 300, panelHeight); slices.Contains(tt.Texts(), "팬") || tt.HasText("균형") || !tt.HasText("알아보기") {
 		t.Errorf("texts %q", tt.Texts())
+	}
+}
+
+func TestViewWithService(t *testing.T) {
+	a := &app{snap: Snapshot{ServiceRunning: true, CPUTemp: 61, HasCPUTemp: true}}
+	a.advanced.installed = true
+	tt := ui.NewTester(a.view, 300, panelHeight)
+	if !tt.HasText("CPU 온도") || !tt.HasText("61°C") || tt.HasText("알아보기") {
+		t.Errorf("texts %q", tt.Texts())
+	}
+	// Installed but not answering yet: no offer to install it.
+	a = &app{}
+	a.advanced.installed = true
+	if tt := ui.NewTester(a.view, 300, panelHeight); tt.HasText("알아보기") || tt.HasText("CPU 온도") {
+		t.Errorf("texts %q", tt.Texts())
+	}
+}
+
+func TestPCTempFallsBackToCPU(t *testing.T) {
+	if v, ok := pcTemp(Snapshot{Temp: 50, HasTemp: true, CPUTemp: 70, HasCPUTemp: true}); v != 50 || !ok {
+		t.Errorf("zone: %v %v", v, ok)
+	}
+	if v, ok := pcTemp(Snapshot{CPUTemp: 70, HasCPUTemp: true}); v != 70 || !ok {
+		t.Errorf("cpu: %v %v", v, ok)
+	}
+	if _, ok := pcTemp(Snapshot{}); ok {
+		t.Error("none")
+	}
+}
+
+func TestAdvancedWindowStates(t *testing.T) {
+	a := &app{}
+	for _, tc := range []struct {
+		step      advancedStep
+		installed bool
+		want      string
+	}{
+		{advancedIdle, false, "켜기"},
+		{advancedIdle, true, "PawnIO 드라이버도 제거"},
+		{advancedWorking, false, "고급 팬 제어를 끄고 있어요"},
+		{advancedDone, false, "고급 팬 제어를 껐어요"},
+	} {
+		a.advanced.step, a.advanced.installed = tc.step, tc.installed
+		if tt := ui.NewTester(a.advancedView, 560, 620); !tt.HasText(tc.want) {
+			t.Errorf("step %d: texts %q", tc.step, tt.Texts())
+		}
+	}
+	a.advanced.step, a.advanced.turningOn = advancedWorking, true
+	if tt := ui.NewTester(a.advancedView, 560, 620); !tt.HasText("고급 팬 제어에 필요한 구성 요소를 설치하고 있어요") {
+		t.Errorf("texts %q", tt.Texts())
+	}
+}
+
+func TestParseVersion(t *testing.T) {
+	for _, tc := range []struct {
+		s    string
+		want [3]int
+		ok   bool
+	}{{"2.2.0.0", [3]int{2, 2, 0}, true}, {"2.1.0", [3]int{2, 1, 0}, true}, {"2.1", [3]int{}, false}, {"x.1.0", [3]int{}, false}} {
+		got, ok := parseVersion(tc.s)
+		if ok != tc.ok || (ok && got != tc.want) {
+			t.Errorf("%q: %v %v", tc.s, got, ok)
+		}
+	}
+	if !versionAtLeast([3]int{2, 2, 0}, pawnIOMinVersion) || versionAtLeast([3]int{2, 1, 9}, pawnIOMinVersion) || !versionAtLeast([3]int{3, 0, 0}, pawnIOMinVersion) {
+		t.Error("versionAtLeast")
+	}
+}
+
+func TestCPUTempFormulas(t *testing.T) {
+	if f := parseCPUFamily("AMD64 Family 25 Model 33 Stepping 2"); f != 25 {
+		t.Errorf("family %d", f)
+	}
+	if f := parseCPUFamily("Intel64 Family 6 Model 165 Stepping 2"); f != 6 {
+		t.Errorf("family %d", f)
+	}
+	// 60 °C, with and without the range that reads 49 higher.
+	if c := amdTctl(480 << 21); c != 60 {
+		t.Errorf("tctl %v", c)
+	}
+	if c := amdTctl(872<<21 | amdTempRangeSel); c != 60 {
+		t.Errorf("tctl range %v", c)
+	}
+}
+
+func TestServiceStateRequests(t *testing.T) {
+	s := &serviceState{version: "1.2.3", cpuRetry: time.Now().Add(time.Hour)} // never opens the hardware
+	if r := s.handle(serviceRequest{Op: "hello"}); r.Protocol != serviceProtocol || r.Version != "1.2.3" {
+		t.Errorf("hello %+v", r)
+	}
+	if r := s.handle(serviceRequest{Op: "write"}); r.Error == "" {
+		t.Errorf("unknown request answered: %+v", r)
+	}
+	if r := s.handle(serviceRequest{Op: "read"}); r.Error != "" || r.HasCPUTemp {
+		t.Errorf("read %+v", r)
 	}
 }
 
@@ -1234,5 +1330,45 @@ func TestSetFanReplacesByName(t *testing.T) {
 	s.setFan("SYS_FAN1", 900)
 	if got := s.fansLine(); got != "CPU 3800 rpm · GPU 4100 rpm · SYS_FAN1 900 rpm" {
 		t.Errorf("line %q", got)
+	}
+}
+
+func TestServiceThisMachine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("talks to the real service")
+	}
+	if _, pid := serviceStatus(); pid == 0 {
+		t.Skip("the service is not running")
+	}
+	var s serviceSensor
+	var got Snapshot
+	s.read(&got)
+	if s.conn == nil {
+		t.Fatal("did not connect")
+	}
+	defer s.conn.close()
+	t.Logf("service %q protocol %d, CPU %v (%v)", s.version, s.protocol, got.CPUTemp, got.HasCPUTemp)
+	if !got.ServiceRunning || !got.HasCPUTemp || got.CPUTemp < 10 || got.CPUTemp > 110 {
+		t.Errorf("%+v", got)
+	}
+	// A request the service does not know is refused, and the connection stays.
+	if _, err := s.conn.ask("write"); err == nil {
+		t.Error("unknown request answered")
+	}
+	if _, err := s.conn.ask("read"); err != nil {
+		t.Error("connection lost:", err)
+	}
+}
+
+func TestOpenOwnImage(t *testing.T) {
+	f, err := openOwnImage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	// Held without delete sharing: the file cannot be renamed meanwhile.
+	if err := os.Rename(f.Name(), f.Name()+".moved"); err == nil {
+		os.Rename(f.Name()+".moved", f.Name())
+		t.Error("renamed while open")
 	}
 }
