@@ -208,10 +208,16 @@ func percent(v float64, ok bool) string {
 	return fmt.Sprintf("%.0f%%", v)
 }
 
-// scrollGutter is the room on the right of scrolled content for the scroll
-// bar, which is drawn over the content: without it the bar covers buttons and
-// inputs at the right edge. It is the bar's 6 DIPs and a margin.
-const scrollGutter = 12
+// The scroll bar is drawn over the content: without room for it, it covers
+// buttons and inputs at the right edge. So scrolled content keeps
+// scrollGutter on its right, of which the bar takes 6 DIPs at the far side
+// and the rest stays clear between it and the content; and the window's own
+// right padding shrinks to scrollBarEdge, so that the bar sits near the
+// window's edge.
+const (
+	scrollGutter  = 18
+	scrollBarEdge = 2
+)
 
 // pcTemp is the PC icon's temperature: the ACPI thermal zone's, or the CPU's
 // where the board tells no zone, as many desktops.
@@ -496,7 +502,7 @@ func (a *app) view(c *ui.Context) {
 	}
 	c.Root().Background(ui.Transparent)
 	// The scroll bar runs in the right padding, clear of the content.
-	ui.Column(c).Fill().Background(t.Surface).Padding(16, 16-scrollGutter, 16, 16).Gap(12).Children(func() {
+	ui.Column(c).Fill().Background(t.Surface).Padding(16, scrollBarEdge, 16, 16).Gap(12).Children(func() {
 		// Scrolls with large text or long lists, so that the quit button stays.
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).Gap(12).Padding(0, scrollGutter, 0, 0).Children(func() {

@@ -120,7 +120,7 @@ func (a *app) advancedView(c *ui.Context) {
 		})
 	}
 	// The scroll bar runs in the right padding, clear of the content.
-	ui.Column(c).Fill().Background(t.Surface).Padding(20, 20-scrollGutter, 20, 20).Gap(16).Children(func() {
+	ui.Column(c).Fill().Background(t.Surface).Padding(20, scrollBarEdge, 20, 20).Gap(16).Children(func() {
 		switch st.step {
 		case advancedWorking:
 			ui.Column(c).Grow(1).Gap(16).Padding(0, scrollGutter, 0, 0).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
