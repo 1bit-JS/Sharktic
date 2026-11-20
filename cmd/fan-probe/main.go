@@ -9,6 +9,7 @@ package main
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -28,7 +29,7 @@ import (
 	"unsafe"
 )
 
-const version = "2"
+const version = "3"
 
 var (
 	kernel32               = syscall.NewLazyDLL("kernel32.dll")
@@ -101,7 +102,14 @@ type acpiTable struct {
 	Size  int
 	Count int // how many the firmware lists, when only the first could be read
 	Data  []byte
+	// Withheld tells that the table was left out, as it holds the Windows
+	// product key or license data.
+	Withheld bool
 }
+
+// withheldTables are the tables never saved: MSDM holds the Windows product key,
+// and SLIC the OEM license.
+var withheldTables = []string{"MSDM", "SLIC"}
 
 func gather() *report {
 	r := &report{Time: time.Now()}
@@ -222,10 +230,32 @@ func readACPITables() ([]acpiTable, string) {
 			tables = append(tables, t)
 		}
 	}
+	for i := range tables {
+		if slices.ContainsFunc(withheldTables, func(w string) bool { return strings.HasPrefix(tables[i].Sig, w) }) {
+			tables[i].Data, tables[i].Withheld = nil, true
+		}
+	}
 	if len(tables) > 0 {
 		err = ""
 	}
 	return tables, err
+}
+
+// table returns the data of the first table of a signature, nil if none.
+func (r *report) table(sig string) []byte {
+	for _, t := range r.Tables {
+		if t.Sig == sig {
+			return t.Data
+		}
+	}
+	return nil
+}
+
+// thinkPadEC tells whether the DSDT has the fan field of ThinkPad embedded
+// controllers, HFSP, which a fan level is written to. Its fans have no firmware
+// method: they are set through the EC, which needs a kernel driver.
+func (r *report) thinkPadEC() bool {
+	return bytes.Contains(r.table("DSDT"), []byte("HFSP"))
 }
 
 // registryTables reads HKLM\HARDWARE\ACPI\<name>\<OEM>\<table>\<revision>.
@@ -420,7 +450,6 @@ var vendorPaths = []struct {
 	pattern *regexp.Regexp
 }{
 	{"Lenovo Legion", regexp.MustCompile(`^LENOVO_(FAN_METHOD|GAMEZONE_DATA|OTHER_METHOD|FAN_TABLE_DATA)$`)},
-	{"Lenovo (기타)", regexp.MustCompile(`(?i)^lenovo`)},
 	{"Dell Alienware/G 시리즈", regexp.MustCompile(`^AWCCWmiMethodFunction$`)},
 	{"HP", regexp.MustCompile(`(?i)^hpqB`)},
 	{"MSI", regexp.MustCompile(`(?i)^msi_`)},
@@ -471,8 +500,11 @@ func (r *report) verdict() []string {
 		v = append(v, fmt.Sprintf("%s: 팬 제어 후보 경로가 있습니다 (%s). 아직 앱이 지원하지 않고, 지원하려면 관리자 권한 구성이 필요합니다.",
 			k, strings.Join(found[k], ", ")))
 	}
+	if r.thinkPadEC() {
+		v = append(v, "ThinkPad 방식 EC 팬 레지스터(HFSP)가 있습니다. 펌웨어 경로가 없어 커널 드라이버로만 제어할 수 있고, 아직 앱이 지원하지 않습니다.")
+	}
 	if len(v) == 0 {
-		v = append(v, "알려진 팬 제어 경로를 찾지 못했습니다. 함께 저장한 ACPI 표로 더 분석할 수 있습니다.")
+		v = append(v, "제조사 펌웨어의 팬 제어 경로를 찾지 못했습니다. 데스크톱 메인보드나 EC 방식 노트북이면 드라이버 방식으로 제어할 수 있을 수 있습니다(아직 앱이 지원하지 않음). 함께 저장한 ACPI 표로 더 분석할 수 있습니다.")
 	}
 	return v
 }
@@ -610,6 +642,9 @@ func (r *report) text() string {
 		note := ""
 		if t.Count > 1 {
 			note = fmt.Sprintf("  (펌웨어에 %d개, 첫 번째만 저장)", t.Count)
+		}
+		if t.Withheld {
+			note = "  (제품 키·라이선스 정보라 저장하지 않음)"
 		}
 		fmt.Fprintf(&b, "%-5s %7d bytes%s\n", t.Sig, t.Size, note)
 	}

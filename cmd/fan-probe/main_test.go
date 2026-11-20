@@ -2,7 +2,10 @@
 
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestVendorPaths(t *testing.T) {
 	r := &report{}
@@ -31,5 +34,32 @@ func TestServiceWords(t *testing.T) {
 		if !vendorWords.MatchString(s) {
 			t.Errorf("%q not matched", s)
 		}
+	}
+}
+
+func TestLenovoBIOSClassesAreNotFans(t *testing.T) {
+	r := &report{}
+	for _, n := range []string{"Lenovo_SetBiosSetting", "Lenovo_BiosSetting", "Lenovo_AssetIdByteWrite"} {
+		r.WMI.Vendor = append(r.WMI.Vendor, wmiClass{Name: n})
+	}
+	if found := r.vendorFound(); len(found) != 0 {
+		t.Errorf("found %v", found)
+	}
+}
+
+func TestThinkPadEC(t *testing.T) {
+	r := &report{Tables: []acpiTable{{Sig: "DSDT", Data: []byte("..HFSP,8,HFNI,8..")}}}
+	if !r.thinkPadEC() {
+		t.Error("HFSP not found")
+	}
+	found := false
+	for _, l := range r.verdict() {
+		found = found || strings.Contains(l, "ThinkPad")
+	}
+	if !found {
+		t.Errorf("verdict %v", r.verdict())
+	}
+	if (&report{}).thinkPadEC() {
+		t.Error("found without a DSDT")
 	}
 }
