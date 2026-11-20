@@ -208,6 +208,11 @@ func percent(v float64, ok bool) string {
 	return fmt.Sprintf("%.0f%%", v)
 }
 
+// scrollGutter is the room on the right of scrolled content for the scroll
+// bar, which is drawn over the content: without it the bar covers buttons and
+// inputs at the right edge. It is the bar's 6 DIPs and a margin.
+const scrollGutter = 12
+
 // pcTemp is the PC icon's temperature: the ACPI thermal zone's, or the CPU's
 // where the board tells no zone, as many desktops.
 func pcTemp(s Snapshot) (float64, bool) {
@@ -490,10 +495,11 @@ func (a *app) view(c *ui.Context) {
 		})
 	}
 	c.Root().Background(ui.Transparent)
-	ui.Column(c).Fill().Background(t.Surface).Padding(16).Gap(12).Children(func() {
+	// The scroll bar runs in the right padding, clear of the content.
+	ui.Column(c).Fill().Background(t.Surface).Padding(16, 16-scrollGutter, 16, 16).Gap(12).Children(func() {
 		// Scrolls with large text or long lists, so that the quit button stays.
 		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).Gap(12).Children(func() {
+			ui.Column(c).Gap(12).Padding(0, scrollGutter, 0, 0).Children(func() {
 				ui.Column(c).Gap(4).Children(func() {
 					ui.Row(c).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, "PC 온도").Bold().Grow(1)
@@ -522,7 +528,7 @@ func (a *app) view(c *ui.Context) {
 				ranking("메모리 점유 상위", s.TopMemory, func(u ProcessUse) string { return memorySize(u.Memory) })
 			})
 		})
-		ui.Row(c).Children(func() {
+		ui.Row(c).Padding(0, scrollGutter, 0, 0).Children(func() {
 			ui.Spacer(c)
 			ui.Button(c.Key("quit"), "종료").OnClick(mygo.App.Quit)
 		})

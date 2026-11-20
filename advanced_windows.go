@@ -111,17 +111,19 @@ func (a *app) advancedView(c *ui.Context) {
 	bullets := func(lines ...string) {
 		ui.Column(c).Gap(4).Children(func() {
 			for _, l := range lines {
-				ui.Row(c).Gap(6).Children(func() {
+				// The dot stays by the first line of a long one.
+				ui.Row(c).Gap(6).AlignItems(ui.Start).Children(func() {
 					ui.Text(c, "•").TextColor(t.TextMuted)
 					ui.Text(c, l).Grow(1)
 				})
 			}
 		})
 	}
-	ui.Column(c).Fill().Background(t.Surface).Padding(20).Gap(16).Children(func() {
+	// The scroll bar runs in the right padding, clear of the content.
+	ui.Column(c).Fill().Background(t.Surface).Padding(20, 20-scrollGutter, 20, 20).Gap(16).Children(func() {
 		switch st.step {
 		case advancedWorking:
-			ui.Column(c).Grow(1).Gap(16).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+			ui.Column(c).Grow(1).Gap(16).Padding(0, scrollGutter, 0, 0).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 				ui.Spinner(c)
 				if st.turningOn {
 					ui.Text(c, "고급 팬 제어에 필요한 구성 요소를 설치하고 있어요").Bold()
@@ -135,7 +137,7 @@ func (a *app) advancedView(c *ui.Context) {
 				})
 			})
 		case advancedDone:
-			ui.Column(c).Grow(1).Gap(12).Justify(ui.Center).Children(func() {
+			ui.Column(c).Grow(1).Gap(12).Padding(0, scrollGutter, 0, 0).Justify(ui.Center).Children(func() {
 				if st.turningOn {
 					ui.Text(c, "고급 팬 제어를 켰어요").Bold().FontSize(16)
 					muted("잠시 뒤 패널에 CPU 온도가 표시됩니다. 앱을 다시 켜도, 컴퓨터를 다시 시작해도 계속 동작해요.")
@@ -144,13 +146,13 @@ func (a *app) advancedView(c *ui.Context) {
 					muted("Sharktic 서비스를 제거했어요. 모니터링과 기존 기능은 그대로 쓸 수 있어요.")
 				}
 			})
-			ui.Row(c).Children(func() {
+			ui.Row(c).Padding(0, scrollGutter, 0, 0).Children(func() {
 				ui.Spacer(c)
 				ui.Button(c.Key("close"), "닫기").OnClick(func() { st.window.Close() })
 			})
 		default:
 			ui.Scroll(c).Grow(1).Children(func() {
-				ui.Column(c).Gap(16).Children(func() {
+				ui.Column(c).Gap(16).Padding(0, scrollGutter, 0, 0).Children(func() {
 					if st.installed {
 						a.advancedOnView(c, heading, muted, bullets)
 					} else {
@@ -159,9 +161,9 @@ func (a *app) advancedView(c *ui.Context) {
 				})
 			})
 			if st.message != "" {
-				ui.Text(c, st.message).FontSize(12).TextColor(t.Danger)
+				ui.Text(c, st.message).FontSize(12).TextColor(t.Danger).Padding(0, scrollGutter, 0, 0)
 			}
-			ui.Row(c).Gap(8).Children(func() {
+			ui.Row(c).Gap(8).Padding(0, scrollGutter, 0, 0).Children(func() {
 				ui.Spacer(c)
 				ui.Button(c.Key("close"), "닫기").OnClick(func() { st.window.Close() })
 				if st.installed {
