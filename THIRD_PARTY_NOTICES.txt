@@ -473,5 +473,6 @@ Copyright (C) 2025 namazso <admin@namazso.eu>
 
 The signed module binaries are included unchanged. They are licensed under
 the GNU Lesser General Public License version 2.1 or later; its full text is
-in pawnio/COPYING.modules in the Sharktic source. Their source code is at
+in LICENSE-PawnIO-Modules.txt next to Sharktic.exe, and in
+pawnio/COPYING.modules in the Sharktic source. Their source code is at
 https://github.com/namazso/PawnIO.Modules (release 0.2.12).
