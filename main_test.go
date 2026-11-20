@@ -525,6 +525,150 @@ func TestHottestZone(t *testing.T) {
 	}
 }
 
+func TestZoneFilterDropsFixedZones(t *testing.T) {
+	var f zoneFilter
+	start := time.Now()
+	read := func(sec int, busy bool, fixed, real float64) []string {
+		var names []string
+		for _, it := range f.real([]counterItem{{name: "fixed", value: fixed}, {name: "real", value: real}},
+			busy, start.Add(time.Duration(sec)*time.Second)) {
+			names = append(names, it.name)
+		}
+		return names
+	}
+	// Idle for long, both stay: a real sensor may hold still while idle.
+	for sec := 0; sec <= 600; sec += 5 {
+		if got := read(sec, false, 3010, 3200); len(got) != 2 {
+			t.Fatalf("idle at %ds: %v", sec, got)
+		}
+	}
+	// Busy: the real one warms, the fixed one is dropped after fixedAfter.
+	sec := 600
+	for ; sec <= 600+int(fixedAfter/time.Second)+5; sec++ {
+		read(sec, true, 3010, 3200+float64(sec-600))
+	}
+	if got := read(sec, true, 3010, 3500); !slices.Equal(got, []string{"real"}) {
+		t.Errorf("after load: %v", got)
+	}
+	// Then holding still under a steady load does not drop the real one.
+	for range 600 {
+		sec++
+		read(sec, true, 3010, 3500)
+	}
+	if got := read(sec+1, true, 3010, 3500); !slices.Equal(got, []string{"real"}) {
+		t.Errorf("steady load: %v", got)
+	}
+	// A sleep does not count as busy time.
+	var g zoneFilter
+	g.real([]counterItem{{name: "z", value: 3010}}, true, start)
+	if got := g.real([]counterItem{{name: "z", value: 3010}}, true, start.Add(time.Hour)); len(got) != 1 {
+		t.Errorf("dropped after a sleep: %v", got)
+	}
+}
+
+func TestKernelGPUsReadThisMachine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads the real sensors")
+	}
+	s := newKernelGPUs()
+	if s == nil {
+		t.Skip("no graphics kernel interface")
+	}
+	defer s.close()
+	var got Snapshot
+	if !s.read(&got) {
+		t.Skip("no GPU tells its temperature")
+	}
+	t.Logf("%d adapters, temperature %v, fan %d (%v)", len(s.adapters), got.GPUTemp, got.GPUFan, got.HasGPUFan)
+	if got.GPUTemp < 10 || got.GPUTemp > 110 {
+		t.Errorf("temperature %v", got.GPUTemp)
+	}
+	// Where NVML is there too, the two agree.
+	if g := newGPUSensor(); g != nil {
+		defer g.close()
+		var nv Snapshot
+		g.read(&nv)
+		if nv.HasGPUTemp && math.Abs(nv.GPUTemp-got.GPUTemp) > 3 {
+			t.Errorf("NVML says %v, the kernel %v", nv.GPUTemp, got.GPUTemp)
+		}
+	}
+}
+
+func TestParseDriveTemperature(t *testing.T) {
+	answer := func(count uint16, temp int16) []byte {
+		b := make([]byte, 24+16)
+		b[12], b[13] = byte(count), byte(count>>8)
+		b[26], b[27] = byte(temp), byte(uint16(temp)>>8)
+		return b
+	}
+	for _, tc := range []struct {
+		b    []byte
+		ok   bool
+		want float64
+		has  bool
+	}{
+		{answer(1, 41), true, 41, true},
+		{answer(3, 55), true, 55, true},
+		{answer(1, 41), false, 0, false}, // the call failed
+		{answer(0, 41), true, 0, false},  // no sensor
+		{answer(1, 0), true, 0, false},   // no value
+		{answer(1, -5), true, 0, false},
+		{answer(1, 200), true, 0, false},
+		{answer(1, 41)[:30], true, 0, false}, // cut short
+	} {
+		got, has := parseDriveTemperature(tc.b, tc.ok)
+		if got != tc.want || has != tc.has {
+			t.Errorf("%v %v: got %v, %v", tc.b, tc.ok, got, has)
+		}
+	}
+}
+
+func TestWantedBus(t *testing.T) {
+	desc := func(removable byte, bus byte) []byte {
+		b := make([]byte, 40)
+		b[10], b[28] = removable, bus
+		return b
+	}
+	for _, tc := range []struct {
+		b    []byte
+		want bool
+	}{
+		{desc(0, busTypeNVMe), true},
+		{desc(0, busTypeSATA), true},
+		{desc(0, 8), false}, // RAID, as Intel RST: asking it froze a laptop
+		{desc(0, 7), false}, // USB
+		{desc(1, busTypeNVMe), false},
+		{desc(0, busTypeNVMe)[:31], false},
+	} {
+		if got := wantedBus(tc.b); got != tc.want {
+			t.Errorf("removable %d bus %d len %d: got %v", tc.b[10], tc.b[min(28, len(tc.b)-1)], len(tc.b), got)
+		}
+	}
+}
+
+func TestDisksReadThisMachine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads the real sensors")
+	}
+	var d diskSensor
+	defer d.close()
+	var got Snapshot
+	d.read(&got, time.Now())
+	if len(d.drives) == 0 {
+		t.Skip("no SSD tells its temperature")
+	}
+	t.Logf("%d drives, %v", len(d.drives), got.DiskTemp)
+	if !got.HasDiskTemp || got.DiskTemp < 10 || got.DiskTemp > 100 {
+		t.Errorf("temperature %v, %v", got.DiskTemp, got.HasDiskTemp)
+	}
+	// Until diskReadEvery, the drives are not asked again.
+	d.temp = -1
+	d.read(&got, time.Now())
+	if got.DiskTemp != -1 {
+		t.Error("asked again too soon")
+	}
+}
+
 func TestBusiestEngine(t *testing.T) {
 	got, ok := busiestEngine([]counterItem{
 		// Two processes on one engine add up.
@@ -667,7 +811,7 @@ func TestSamplerRecoversFromLostGPU(t *testing.T) {
 	}
 	s := NewSampler()
 	var first Snapshot
-	s.readGPU(&first)
+	s.readVendorGPU(&first)
 	if s.gpu == nil {
 		t.Skip("no NVML")
 	}
@@ -677,7 +821,7 @@ func TestSamplerRecoversFromLostGPU(t *testing.T) {
 	}
 
 	var lost Snapshot
-	s.readGPU(&lost)
+	s.readVendorGPU(&lost)
 	if s.gpu != nil {
 		t.Fatal("still uses the lost GPU")
 	}
@@ -687,7 +831,7 @@ func TestSamplerRecoversFromLostGPU(t *testing.T) {
 
 	s.gpuRetryAt = time.Time{} // the time to retry has come
 	var back Snapshot
-	s.readGPU(&back)
+	s.readVendorGPU(&back)
 	if s.gpu == nil || !back.HasGPU || !back.HasGPUTemp || back.VRAMTotal == 0 {
 		t.Errorf("not recovered: %+v", back)
 	}

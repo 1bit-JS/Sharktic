@@ -165,6 +165,69 @@ func hottestZone(items []counterItem) (float64, bool) {
 	return best, ok
 }
 
+const (
+	// busyCPU is the CPU use, in percent, at which a real sensor warms.
+	busyCPU = 50
+	// fixedAfter is how long the CPU may be busy while a zone never changes
+	// before the zone is taken for a fixed value.
+	fixedAfter = 2 * time.Minute
+)
+
+// zoneFilter drops the thermal zones that tell a fixed value: many desktop
+// boards have a zone that always says 27.8°C or so, and no real one. Only a
+// zone that has never changed is dropped, so that a real one that holds still
+// under a steady load stays.
+type zoneFilter struct {
+	zones map[string]*zoneState
+	last  time.Time
+}
+
+type zoneState struct {
+	first   float64
+	changed bool
+	busy    time.Duration // of busy CPU while the zone has been seen
+	seen    bool          // in the last reading
+}
+
+// real returns the zones not known to be fixed, given whether the CPU was busy
+// since the last call.
+func (f *zoneFilter) real(items []counterItem, cpuBusy bool, now time.Time) []counterItem {
+	step := time.Duration(0)
+	if !f.last.IsZero() && cpuBusy {
+		step = min(now.Sub(f.last), 10*time.Second) // not the time asleep
+	}
+	f.last = now
+	if f.zones == nil {
+		f.zones = make(map[string]*zoneState)
+	}
+	for _, z := range f.zones {
+		z.seen = false
+	}
+	var out []counterItem
+	for _, it := range items {
+		if !it.valid() {
+			continue
+		}
+		z := f.zones[it.name]
+		if z == nil {
+			z = &zoneState{first: it.value}
+			f.zones[it.name] = z
+		}
+		z.changed = z.changed || it.value != z.first
+		z.busy += step
+		z.seen = true
+		if z.changed || z.busy < fixedAfter {
+			out = append(out, it)
+		}
+	}
+	for name, z := range f.zones {
+		if !z.seen {
+			delete(f.zones, name)
+		}
+	}
+	return out
+}
+
 // busiestEngine returns the use of the busiest engine of all adapters, which
 // is what Task Manager shows of an adapter. An engine has an instance for each
 // process that uses it, named as
@@ -201,6 +264,7 @@ func largestValue(items []counterItem) (float64, bool) {
 type counterSensor struct {
 	query        pdhQuery
 	cpu, thermal uintptr
+	zones        zoneFilter
 }
 
 func newCounterSensor() *counterSensor {
@@ -234,9 +298,10 @@ func (s *counterSensor) cpuUsage() (float64, bool) {
 	return min(it.value, 100), true
 }
 
-// temperature returns the hottest thermal zone in degrees Celsius.
-func (s *counterSensor) temperature() (float64, bool) {
-	return hottestZone(counterArray(s.thermal))
+// temperature returns the hottest thermal zone in degrees Celsius, of those
+// that are not a fixed value.
+func (s *counterSensor) temperature(cpu float64, cpuOK bool) (float64, bool) {
+	return hottestZone(s.zones.real(counterArray(s.thermal), cpuOK && cpu >= busyCPU, time.Now()))
 }
 
 // gpuCounters reads any GPU through the performance counters of Windows, for
@@ -340,8 +405,12 @@ type Sampler struct {
 	gpu         *gpuSensor
 	gpuRetryAt  time.Time
 	gpuCounters *gpuCounters
-	fans        fanBackend
-	processes   processSensor
+	// kernelGPUs gives the temperature of the GPUs that NVML does not cover.
+	kernelGPUs        *kernelGPUs
+	kernelGPUsRetryAt time.Time
+	disks             diskSensor
+	fans              fanBackend
+	processes         processSensor
 }
 
 func NewSampler() *Sampler {
@@ -350,8 +419,26 @@ func NewSampler() *Sampler {
 	return s
 }
 
-// readGPU reads NVML, or the performance counters while NVML is not there.
+// readGPU reads NVML, or the performance counters while NVML is not there,
+// and the graphics kernel for what they lack.
 func (s *Sampler) readGPU(out *Snapshot) {
+	s.readVendorGPU(out)
+	if out.HasGPUTemp && out.HasGPUFan {
+		return
+	}
+	if now := time.Now(); s.kernelGPUs == nil && !now.Before(s.kernelGPUsRetryAt) {
+		s.kernelGPUsRetryAt = now.Add(gpuRetryEvery)
+		s.kernelGPUs = newKernelGPUs()
+	}
+	// Without a temperature, the adapters may have changed, as by a driver
+	// update: they are looked up again later.
+	if s.kernelGPUs != nil && !s.kernelGPUs.read(out) {
+		s.kernelGPUs.close()
+		s.kernelGPUs = nil
+	}
+}
+
+func (s *Sampler) readVendorGPU(out *Snapshot) {
 	if now := time.Now(); s.gpu == nil && !now.Before(s.gpuRetryAt) {
 		s.gpuRetryAt = now.Add(gpuRetryEvery)
 		s.gpu = newGPUSensor()
@@ -373,10 +460,11 @@ func (s *Sampler) Read() Snapshot {
 	var out Snapshot
 	if s.counters.collect() {
 		out.CPUUsage, out.HasCPU = s.counters.cpuUsage()
-		out.Temp, out.HasTemp = s.counters.temperature()
+		out.Temp, out.HasTemp = s.counters.temperature(out.CPUUsage, out.HasCPU)
 	}
 	out.MemUsed, out.MemTotal, _ = readMemory()
 	s.readGPU(&out)
+	s.disks.read(&out, time.Now())
 	if s.fans != nil {
 		s.fans.read(&out)
 	}

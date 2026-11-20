@@ -66,6 +66,10 @@ type Snapshot struct {
 	HasGPUTemp          bool
 	VRAMUsed, VRAMTotal uint64 // VRAMTotal is 0 where the size is unknown
 
+	// DiskTemp is the hottest internal SSD's.
+	DiskTemp    float64
+	HasDiskTemp bool
+
 	CPUFan, GPUFan       int // in RPM
 	HasCPUFan, HasGPUFan bool
 
@@ -424,6 +428,12 @@ func (a *app) view(c *ui.Context) {
 					"전용 메모리 "+memoryLine(s.VRAMUsed, s.VRAMTotal))
 				section("메모리", 100*ratio(s.MemUsed, s.MemTotal), s.MemTotal > 0,
 					memoryLine(s.MemUsed, s.MemTotal))
+				if s.HasDiskTemp {
+					ui.Row(c).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, "SSD 온도").Bold().Grow(1)
+						ui.Text(c, degrees(s.DiskTemp, true)).Bold()
+					})
+				}
 				a.fanSection(c)
 				ui.Divider(c)
 				ranking("CPU 점유 상위", s.TopCPU, func(u ProcessUse) string { return fmt.Sprintf("%.1f%%", u.CPU) })

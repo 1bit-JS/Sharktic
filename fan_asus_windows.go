@@ -107,13 +107,18 @@ func fanRPM(raw uint32) (int, bool) {
 
 func (a *asusControl) name() string { return "asus" }
 
-// read adds the speeds of the fans.
+// read adds the speeds of the fans that the firmware has, keeping what was read
+// elsewhere of the others.
 func (a *asusControl) read(out *Snapshot) {
 	if raw, ok := a.callValue(atkGet, atkCPUFan, 0); ok {
-		out.CPUFan, out.HasCPUFan = fanRPM(raw)
+		if v, ok := fanRPM(raw); ok {
+			out.CPUFan, out.HasCPUFan = v, true
+		}
 	}
 	if raw, ok := a.callValue(atkGet, atkGPUFan, 0); ok {
-		out.GPUFan, out.HasGPUFan = fanRPM(raw)
+		if v, ok := fanRPM(raw); ok {
+			out.GPUFan, out.HasGPUFan = v, true
+		}
 	}
 }
 
