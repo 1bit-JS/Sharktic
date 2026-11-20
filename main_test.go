@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -114,22 +115,38 @@ func TestAdvancedWindowStates(t *testing.T) {
 	a := &app{}
 	for _, tc := range []struct {
 		step      advancedStep
+		work      advancedWork
 		installed bool
 		want      string
 	}{
-		{advancedIdle, false, "켜기"},
-		{advancedIdle, true, "PawnIO 드라이버도 제거"},
-		{advancedWorking, false, "고급 팬 제어를 끄고 있어요"},
-		{advancedDone, false, "고급 팬 제어를 껐어요"},
+		{advancedIdle, turnOn, false, "켜기"},
+		{advancedIdle, turnOn, true, "PawnIO 드라이버도 제거"},
+		{advancedWorking, turnOn, false, "고급 팬 제어에 필요한 구성 요소를 설치하고 있어요"},
+		{advancedWorking, turnOff, false, "고급 팬 제어를 끄고 있어요"},
+		{advancedWorking, updateService, true, "Sharktic 서비스를 새 버전으로 바꾸고 있어요"},
+		{advancedDone, turnOff, false, "고급 팬 제어를 껐어요"},
+		{advancedDone, updateService, true, "Sharktic 서비스를 업데이트했어요"},
 	} {
-		a.advanced.step, a.advanced.installed = tc.step, tc.installed
+		a.advanced.step, a.advanced.work, a.advanced.installed = tc.step, tc.work, tc.installed
 		if tt := ui.NewTester(a.advancedView, 560, 620); !tt.HasText(tc.want) {
-			t.Errorf("step %d: texts %q", tc.step, tt.Texts())
+			t.Errorf("step %d work %d: texts %q", tc.step, tc.work, tt.Texts())
 		}
 	}
-	a.advanced.step, a.advanced.turningOn = advancedWorking, true
-	if tt := ui.NewTester(a.advancedView, 560, 620); !tt.HasText("고급 팬 제어에 필요한 구성 요소를 설치하고 있어요") {
-		t.Errorf("texts %q", tt.Texts())
+}
+
+func TestServiceUpdateOffered(t *testing.T) {
+	a := &app{snap: Snapshot{ServiceRunning: true, ServiceVersion: "0.0.1", CPUTemp: 50, HasCPUTemp: true}}
+	a.advanced.installed = true
+	if tt := ui.NewTester(a.advancedView, 560, 620); !tt.HasText("서비스 업데이트") || !tt.HasText("끄기") {
+		t.Errorf("window: %q", tt.Texts())
+	}
+	if tt := ui.NewTester(a.view, 300, panelHeight); !tt.HasText("서비스 업데이트") {
+		t.Errorf("panel: %q", tt.Texts())
+	}
+	// The same version: nothing to update.
+	a.snap.ServiceVersion = mygo.App.Version()
+	if tt := ui.NewTester(a.advancedView, 560, 620); tt.HasText("서비스 업데이트") {
+		t.Errorf("window: %q", tt.Texts())
 	}
 }
 

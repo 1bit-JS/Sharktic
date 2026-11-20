@@ -26,11 +26,22 @@ const (
 	advancedFailed
 )
 
+// advancedWork is what the elevated copy is asked to do.
+type advancedWork int
+
+const (
+	turnOn advancedWork = iota
+	turnOff
+	// updateService installs this version's service in place of an older
+	// one, which turning on does too.
+	updateService
+)
+
 // advancedState is the advanced window's, on the main thread.
 type advancedState struct {
 	window       *mygo.Window
 	step         advancedStep
-	turningOn    bool   // what the work in progress does
+	work         advancedWork // what the work in progress does
 	message      string // of the last result
 	installed    bool   // the service is registered
 	removePawnIO bool
@@ -69,17 +80,17 @@ func (a *app) openAdvancedWindow() {
 	a.advanced.window.OnClosed(func() { a.advanced.window = nil })
 }
 
-// runAdvancedSetup turns advanced fan control on or off, in an elevated copy
-// of the app, and shows the result when it ends.
-func (a *app) runAdvancedSetup(on bool) {
+// runAdvancedSetup turns advanced fan control on or off, or updates its
+// service, in an elevated copy of the app, and shows the result when it ends.
+func (a *app) runAdvancedSetup(work advancedWork) {
 	args := enableFlag
-	if !on {
+	if work == turnOff {
 		args = disableFlag
 		if a.advanced.removePawnIO {
 			args += " " + removePawnIOFlag
 		}
 	}
-	a.advanced.step, a.advanced.turningOn, a.advanced.message = advancedWorking, on, ""
+	a.advanced.step, a.advanced.work, a.advanced.message = advancedWorking, work, ""
 	go func() {
 		code, err := runElevated(args)
 		mygo.RunOnMain(func() {
@@ -125,9 +136,12 @@ func (a *app) advancedView(c *ui.Context) {
 		case advancedWorking:
 			ui.Column(c).Grow(1).Gap(16).Padding(0, scrollGutter, 0, 0).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 				ui.Spinner(c)
-				if st.turningOn {
+				switch st.work {
+				case turnOn:
 					ui.Text(c, "고급 팬 제어에 필요한 구성 요소를 설치하고 있어요").Bold()
-				} else {
+				case updateService:
+					ui.Text(c, "Sharktic 서비스를 새 버전으로 바꾸고 있어요").Bold()
+				default:
 					ui.Text(c, "고급 팬 제어를 끄고 있어요").Bold()
 				}
 				muted("관리자 확인 창이 뜨면 '예'를 눌러 주세요. 보통 몇 초면 끝나요.")
@@ -138,10 +152,14 @@ func (a *app) advancedView(c *ui.Context) {
 			})
 		case advancedDone:
 			ui.Column(c).Grow(1).Gap(12).Padding(0, scrollGutter, 0, 0).Justify(ui.Center).Children(func() {
-				if st.turningOn {
+				switch st.work {
+				case turnOn:
 					ui.Text(c, "고급 팬 제어를 켰어요").Bold().FontSize(16)
 					muted("잠시 뒤 패널에 CPU 온도가 표시됩니다. 앱을 다시 켜도, 컴퓨터를 다시 시작해도 계속 동작해요.")
-				} else {
+				case updateService:
+					ui.Text(c, "Sharktic 서비스를 업데이트했어요").Bold().FontSize(16)
+					muted("서비스가 앱과 같은 " + mygo.App.Version() + " 버전으로 바뀌었어요. 설정은 그대로예요.")
+				default:
 					ui.Text(c, "고급 팬 제어를 껐어요").Bold().FontSize(16)
 					muted("Sharktic 서비스를 제거했어요. 모니터링과 기존 기능은 그대로 쓸 수 있어요.")
 				}
@@ -166,10 +184,14 @@ func (a *app) advancedView(c *ui.Context) {
 			ui.Row(c).Gap(8).Padding(0, scrollGutter, 0, 0).Children(func() {
 				ui.Spacer(c)
 				ui.Button(c.Key("close"), "닫기").OnClick(func() { st.window.Close() })
-				if st.installed {
-					ui.Button(c.Key("off"), "끄기").OnClick(func() { a.runAdvancedSetup(false) })
-				} else {
-					ui.PrimaryButton(c.Key("on"), "켜기").OnClick(func() { a.runAdvancedSetup(true) })
+				switch {
+				case st.installed && a.serviceOutdated():
+					ui.Button(c.Key("off"), "끄기").OnClick(func() { a.runAdvancedSetup(turnOff) })
+					ui.PrimaryButton(c.Key("update"), "서비스 업데이트").OnClick(func() { a.runAdvancedSetup(updateService) })
+				case st.installed:
+					ui.Button(c.Key("off"), "끄기").OnClick(func() { a.runAdvancedSetup(turnOff) })
+				default:
+					ui.PrimaryButton(c.Key("on"), "켜기").OnClick(func() { a.runAdvancedSetup(turnOn) })
 				}
 			})
 		}
@@ -218,8 +240,8 @@ func (a *app) advancedOnView(c *ui.Context, heading func(string), muted func(str
 		switch {
 		case !s.ServiceRunning:
 			muted("서비스에 연결하는 중이에요. 계속 연결되지 않으면 껐다가 다시 켜 주세요.")
-		case s.ServiceVersion != mygo.App.Version():
-			muted("서비스가 이전 버전(" + s.ServiceVersion + ")이에요. 껐다가 다시 켜면 이 버전으로 바뀌어요.")
+		case a.serviceOutdated():
+			muted("서비스가 이전 버전(" + s.ServiceVersion + ")이에요. [서비스 업데이트]를 누르면 앱과 같은 " + mygo.App.Version() + " 버전으로 바뀌어요.")
 		case s.HasCPUTemp:
 			muted("CPU 온도 " + degrees(s.CPUTemp, true))
 		default:
@@ -236,6 +258,13 @@ func (a *app) advancedOnView(c *ui.Context, heading func(string), muted func(str
 	})
 }
 
+// serviceOutdated tells that the running service is of another version than
+// the app, whose new requests it may not know.
+func (a *app) serviceOutdated() bool {
+	s := a.snap
+	return s.ServiceRunning && s.ServiceVersion != mygo.App.Version()
+}
+
 // advancedSection is the panel's line of advanced fan control: the CPU
 // temperature when it is on, and a way to it when it is off.
 func (a *app) advancedSection(c *ui.Context) {
@@ -247,6 +276,10 @@ func (a *app) advancedSection(c *ui.Context) {
 				ui.Text(c, degrees(s.CPUTemp, s.HasCPUTemp)).Bold()
 			})
 			ui.Text(c, "CPU 센서 · 고급 팬 제어").FontSize(12).TextColor(t.TextMuted)
+			if a.serviceOutdated() {
+				ui.Text(c, "고급 팬 제어 서비스가 이전 버전이에요").FontSize(12)
+				ui.Button(c.Key("advanced-update"), "서비스 업데이트").OnClick(a.openAdvancedWindow)
+			}
 		})
 		return
 	}
