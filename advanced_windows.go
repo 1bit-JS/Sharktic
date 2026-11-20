@@ -42,8 +42,8 @@ type advancedState struct {
 	window       *mygo.Window
 	step         advancedStep
 	work         advancedWork // what the work in progress does
-	message      string // of the last result
-	installed    bool   // the service is registered
+	message      string       // of the last result
+	installed    bool         // the service is registered
 	removePawnIO bool
 }
 
