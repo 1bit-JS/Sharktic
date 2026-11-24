@@ -1,6 +1,10 @@
 {
   "name": "Sharktic",
   "identifier": "com.local.sharktic",
-  "version": "0.2.1",
-  "out": "build"
+  "version": "0.2.3",
+  "out": "build",
+  "resources": ["LICENSE", "THIRD_PARTY_NOTICES.txt"],
+  "windows": {
+    "installerInclude": "installer.nsh"
+  }
 }
