@@ -4,8 +4,10 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
+	"time"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
@@ -40,7 +42,20 @@ type cpuThermal struct {
 	pciMu  windows.Handle
 	// source tells where the temperature comes from, for a diagnosis.
 	source string
+
+	// last is the last good reading, at lastAt, which stands in for a read
+	// that fails now and then, as while another program holds the PCI
+	// mutex; failLogged is when a failure was last logged.
+	last               float64
+	lastAt, failLogged time.Time
 }
+
+const (
+	// cpuTempKeep is how long a good reading stands in for failed ones.
+	cpuTempKeep = 10 * time.Second
+	// cpuTempLogEvery is how often a failing read is logged, at most.
+	cpuTempLogEvery = 10 * time.Minute
+)
 
 // cpuIdentity is the vendor and family of the first CPU.
 func cpuIdentity() (vendor string, family int) {
@@ -86,14 +101,14 @@ func openCPUThermal() (*cpuThermal, error) {
 		t.read = t.readIntel
 		return t, nil
 	case vendor == "AuthenticAMD" && family >= 0x17:
-		// Not tried on a real AMD CPU yet: the register and its scale are those
-		// that Linux k10temp and LibreHardwareMonitor read.
+		// The register and its scale are those that Linux k10temp and
+		// LibreHardwareMonitor read; verified on a Ryzen 7 3700X against
+		// HWiNFO.
 		m, err := openPawnIOModule(amdFamily17Module)
 		if err != nil {
 			return nil, err
 		}
-		name, _ := windows.UTF16PtrFromString(`Global\Access_PCI`)
-		mu, err := windows.CreateMutex(nil, false, name)
+		mu, err := openGlobalMutex(`Global\Access_PCI`)
 		if err != nil {
 			m.close()
 			return nil, err
@@ -127,13 +142,14 @@ func (t *cpuThermal) readIntel() (float64, error) {
 
 func (t *cpuThermal) readAMD() (float64, error) {
 	// Other programs that read the PCI configuration take this mutex too.
-	if ev, err := windows.WaitForSingleObject(t.pciMu, 100); err != nil || ev == uint32(windows.WAIT_TIMEOUT) {
-		return 0, errors.New("PCI access is busy")
-	}
-	out, err := t.module.call("ioctl_read_smn", []uint64{smnThmTconCurTmp}, 1)
-	windows.ReleaseMutex(t.pciMu)
+	var out []uint64
+	err := withGlobalMutex(t.pciMu, 100*time.Millisecond, func() error {
+		var err error
+		out, err = t.module.call("ioctl_read_smn", []uint64{smnThmTconCurTmp}, 1)
+		return err
+	})
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("PCI access: %w", err)
 	}
 	if len(out) != 1 {
 		return 0, errors.New("no value")
@@ -152,11 +168,27 @@ func amdTctl(v uint32) float64 {
 
 // temperature returns the package temperature in degrees Celsius.
 func (t *cpuThermal) temperature() (float64, bool) {
-	c, err := t.read()
-	if err != nil || c <= 0 || c > 125 {
-		return 0, false
+	return t.check(t.read())
+}
+
+// check takes a read, made now.
+func (t *cpuThermal) check(c float64, err error) (float64, bool) {
+	now := time.Now()
+	if err == nil && (c <= 0 || c > 125) {
+		err = fmt.Errorf("out of range: %.1f", c)
 	}
-	return c, true
+	if err == nil {
+		t.last, t.lastAt = c, now
+		return c, true
+	}
+	if now.Sub(t.failLogged) >= cpuTempLogEvery {
+		t.failLogged = now
+		log.Println("cpu temp:", err)
+	}
+	if !t.lastAt.IsZero() && now.Sub(t.lastAt) <= cpuTempKeep {
+		return t.last, true
+	}
+	return 0, false
 }
 
 func (t *cpuThermal) close() {

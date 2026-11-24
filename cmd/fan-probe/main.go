@@ -29,7 +29,7 @@ import (
 	"unsafe"
 )
 
-const version = "3"
+const version = "4"
 
 var (
 	kernel32               = syscall.NewLazyDLL("kernel32.dll")
@@ -38,6 +38,7 @@ var (
 	procGetFirmwareTable   = kernel32.NewProc("GetSystemFirmwareTable")
 	procSetConsoleOutputCP = kernel32.NewProc("SetConsoleOutputCP")
 	procIsUserAnAdmin      = syscall.NewLazyDLL("shell32.dll").NewProc("IsUserAnAdmin")
+	procGetPowerStatus     = kernel32.NewProc("GetSystemPowerStatus")
 	hklm                   = syscall.Handle(syscall.HKEY_LOCAL_MACHINE)
 )
 
@@ -86,6 +87,7 @@ type report struct {
 	Manufacturer, Model, Family, Board  string
 	BIOS, BIOSDate, Windows, CPU        string
 	Admin                               bool
+	Battery                             string // "yes", "no", or "unknown"
 	GPUs                                []string
 	ASUS                                bool // the ASUS driver opened
 	ASUSLines                           []string
@@ -127,6 +129,7 @@ func gather() *report {
 	r.Windows = windowsVersion()
 	ok, _, _ := procIsUserAnAdmin.Call()
 	r.Admin = ok != 0
+	r.Battery = battery()
 
 	step("ASUS 드라이버")
 	probeASUS(r)
@@ -471,7 +474,27 @@ func (r *report) vendorFound() map[string][]string {
 	return found
 }
 
+// battery tells whether the PC has a battery: a desktop has none.
+func battery() string {
+	var st struct {
+		acLine, flag, percent, saver byte
+		life, fullLife               uint32
+	}
+	if ok, _, _ := procGetPowerStatus.Call(uintptr(unsafe.Pointer(&st))); ok == 0 || st.flag == 255 {
+		return "unknown"
+	}
+	if st.flag&128 != 0 { // no system battery
+		return "no"
+	}
+	return "yes"
+}
+
 func (r *report) verdict() []string {
+	// A desktop's fans are on its board, which the vendor WMI of laptops does
+	// not reach: an MSI board has MSI_ classes for BIOS settings, not fans.
+	if r.Battery == "no" {
+		return []string{"데스크톱(배터리 없음): 메인보드의 팬과 CPU 온도는 앱의 고급 팬 제어로 읽습니다. Sharktic에서 고급 팬 제어를 켠 뒤, 오른쪽 클릭 메뉴의 \"진단 정보 복사\" 내용을 함께 보내 주세요."}
+	}
 	var v []string
 	switch {
 	case r.ASUS && (r.ASUSModes || r.ASUSCurves):
@@ -622,6 +645,7 @@ func (r *report) text() string {
 	line("cpu", r.CPU)
 	line("gpu", strings.Join(r.GPUs, " / "))
 	line("admin", yes(r.Admin))
+	line("battery", r.Battery)
 
 	section("판정")
 	for _, l := range r.verdict() {

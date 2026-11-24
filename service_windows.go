@@ -110,7 +110,7 @@ func (s *serviceState) read() serviceReply {
 		switch {
 		case err != nil:
 			log.Println("super i/o:", err)
-			s.sioNote = "오류: " + err.Error()
+			s.sioNote = "error: " + err.Error()
 		case sio == nil:
 			s.sioNote, s.sioDone = note, true // looking again would not find one
 		default:
@@ -123,7 +123,7 @@ func (s *serviceState) read() serviceReply {
 	case s.cpu != nil:
 		r.CPUSource = s.cpu.source
 	case s.cpuErr != nil:
-		r.CPUSource = "오류: " + s.cpuErr.Error()
+		r.CPUSource = "error: " + s.cpuErr.Error()
 	}
 	if s.cpu != nil {
 		r.CPUTemp, r.HasCPUTemp = s.cpu.temperature()

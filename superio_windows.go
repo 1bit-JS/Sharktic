@@ -2,8 +2,8 @@ package main
 
 import (
 	_ "embed"
-	"errors"
 	"fmt"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -143,9 +143,9 @@ func probeSuperIO(p lpcPorts) (*superIOChip, string, error) {
 		}
 	}
 	if len(seen) == 0 {
-		return nil, "칩 없음", nil
+		return nil, "no chip", nil
 	}
-	return nil, fmt.Sprintf("지원하지 않는 칩 %v", seen), nil
+	return nil, fmt.Sprintf("unsupported chip %v", seen), nil
 }
 
 func probeNuvoton(p lpcPorts, port uint16) (*superIOChip, uint16, error) {
@@ -337,7 +337,7 @@ func openSuperIO() (*superIO, string, error) {
 	if !systemHasNoBattery() {
 		// A laptop's embedded controller may sit at the same ports, and is
 		// left alone.
-		return nil, "노트북은 확인하지 않음", nil
+		return nil, "not probed on laptops", nil
 	}
 	ports, err := openPawnIOPorts()
 	if err != nil {
@@ -371,7 +371,7 @@ func (s *superIO) fans() ([]FanSpeed, error) {
 	for i, v := range rpms {
 		s.seen[i] = s.seen[i] || v > 0
 		if s.seen[i] {
-			out = append(out, FanSpeed{Name: fmt.Sprintf("팬 %d", s.chip.fans[i]+1), RPM: v})
+			out = append(out, FanSpeed{Name: fmt.Sprintf("Fan %d", s.chip.fans[i]+1), RPM: v})
 		}
 	}
 	return out, nil
@@ -390,8 +390,7 @@ func openPawnIOPorts() (*pawnIOPorts, error) {
 	if err != nil {
 		return nil, err
 	}
-	name, _ := windows.UTF16PtrFromString(isaBusMutex)
-	mu, err := windows.CreateMutex(nil, false, name)
+	mu, err := openGlobalMutex(isaBusMutex)
 	if err != nil {
 		m.close()
 		return nil, err
@@ -401,12 +400,10 @@ func openPawnIOPorts() (*pawnIOPorts, error) {
 
 // locked runs fn while holding the ISA bus mutex.
 func (p *pawnIOPorts) locked(fn func() error) error {
-	ev, err := windows.WaitForSingleObject(p.mu, 500)
-	if err != nil || ev == uint32(windows.WAIT_TIMEOUT) {
-		return errors.New("the ISA bus is busy")
+	if err := withGlobalMutex(p.mu, 500*time.Millisecond, fn); err != nil {
+		return fmt.Errorf("ISA bus: %w", err)
 	}
-	defer windows.ReleaseMutex(p.mu)
-	return fn()
+	return nil
 }
 
 func (p *pawnIOPorts) call(name string, in ...uint64) (uint64, error) {

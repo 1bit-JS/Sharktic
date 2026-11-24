@@ -4,7 +4,7 @@
 
 A tray hardware monitor for Windows PCs and laptops. It shows CPU, GPU, memory and temperature as tray icons, and on supported laptops it lets you change the fan mode and temperature-based fan curves without entering the BIOS. The app runs without administrator rights; the optional advanced fan control adds a small service for hardware that needs them.
 
-> The app's interface is currently in Korean only. Menu labels below are given in English with the original Korean in parentheses.
+> The app is in English by default. To switch to Korean, choose Language → 한국어 in the right-click menu.
 
 ## Support by manufacturer
 
@@ -25,7 +25,8 @@ The hardware monitor works on any Windows 10 or 11 PC, regardless of manufacture
 | LG | gram | Not investigated | |
 | Microsoft | Surface | Not investigated | |
 | Hansung | TFG, BossMonster, etc. | Not investigated | |
-| Desktop boards | Nuvoton NCT67xx, ITE IT86xx chips | Testing | Fan speed readout through advanced fan control, not yet verified on a real board. Fan control comes next |
+| Desktop boards | Nuvoton NCT67xx chips | Partial | Fan speed readout through advanced fan control. Verified on MSI B450M MORTAR MAX (NCT6797D). Fan control comes next |
+| Desktop boards | ITE IT86xx chips | Testing | Fan speed readout through advanced fan control, not yet verified on a real board |
 
 - **Supported:** works in the current version
 - **Partial:** only some features work
@@ -42,13 +43,15 @@ Run `fan-probe.exe` from [Releases](https://github.com/1bit-JS/Sharktic/releases
 
 ## Installation
 
-1. Download `Sharktic-<version>-windows-amd64.zip` from [Releases](https://github.com/1bit-JS/Sharktic/releases) and extract it to any folder.
-2. Run `Sharktic.exe`. There is no installer; an icon appears in the tray.
+1. Download `sharktic-setup-<version>-amd64.exe` from [Releases](https://github.com/1bit-JS/Sharktic/releases) and run it. It installs for your user account only, without administrator rights.
+2. Choose English or 한국어 (English is selected by default), then finish the setup. Sharktic starts and its icons appear in the tray.
 3. The program is unsigned, so if Windows SmartScreen blocks it, click "More info → Run anyway".
+
+You can change the language later from Language in the right-click menu. Prefer no installer? Download `Sharktic-<version>-windows-amd64.zip` instead, extract it anywhere and run `Sharktic.exe`; it starts in English.
 
 Windows puts new icons inside the tray overflow (^); drag them out to keep them always visible.
 
-**Uninstall:** if advanced fan control is on, turn it off first from Advanced fan control (고급 팬 제어…) in the right-click menu. Then turn off start at login, quit the app, and delete the folder and `%AppData%\Sharktic`.
+**Uninstall:** use Settings → Apps. It also turns off advanced fan control (one administrator prompt) and start at login; the PawnIO driver stays, as other programs may use it, and your settings stay in `%AppData%\Sharktic`. For the zip version, turn off advanced fan control from Advanced fan control… in the right-click menu first, then turn off start at login, quit the app, and delete the folder and `%AppData%\Sharktic`.
 
 ## Features
 
@@ -57,19 +60,20 @@ Windows puts new icons inside the tray overflow (^); drag them out to keep them 
 - GPU temperature on NVIDIA, AMD and Intel GPUs whose drivers report it, and the temperature of internal NVMe and SATA SSDs
 - Hover for a summary, left-click for a detailed panel (including the top programs by CPU and memory)
 - Values that cannot be measured are shown as `--`
+- **Overheat alerts:** a notification when the CPU stays above 95°C, the GPU above 87°C or an SSD above 75°C for a minute (the PC temperature above 90°C where the CPU's own is not read), with the program using the most CPU. These limits are above what parts reach under normal load. Turn them off with Overheat alerts in the right-click menu
 
 **Fan control** (supported laptops)
 - **Performance modes:** pick one of the laptop firmware's own modes (Silent, Balanced, Turbo, etc.)
 - **Curve presets:** laptops with fan curves but no firmware modes get app-made Silent, Balanced and Max curves
 - **Advanced settings:** set fan speed by temperature for the CPU and GPU fans separately and see it as a graph. Warns when values go below the recommended ones
-- Your choice is saved and reapplied when the app restarts and when the PC wakes from sleep. Turning on "Apply this fan setting at startup" (컴퓨터를 켤 때 이 팬 설정 적용) starts the app automatically at login
+- Your choice is saved and reapplied when the app restarts and when the PC wakes from sleep. Turning on "Apply this fan setting at startup" starts the app automatically at login
 
-**Advanced fan control** (고급 팬 제어, optional): turn it on from the panel or the right-click menu. One administrator prompt installs a Sharktic service and the [PawnIO](https://pawnio.eu) driver, the signed open-source driver LibreHardwareMonitor and FanControl also use. The app itself keeps running without administrator rights.
-- **Now:** the CPU temperature measured by the CPU itself (Intel; AMD Ryzen not yet verified), also on desktops where the PC temperature shows `--`; fan speeds of desktop boards with Nuvoton or ITE chips (testing)
+**Advanced fan control** (optional): turn it on from the panel or the right-click menu. One administrator prompt installs a Sharktic service and the [PawnIO](https://pawnio.eu) driver, the signed open-source driver LibreHardwareMonitor and FanControl also use. The app itself keeps running without administrator rights.
+- **Now:** the CPU temperature measured by the CPU itself (Intel and AMD Ryzen), also on desktops where the PC temperature shows `--`; fan speeds of desktop boards with Nuvoton chips, and ITE chips (testing)
 - **Next:** temperature-based control of desktop fans, ThinkPad fans
 - It can be turned off from the same window at any time, which removes the service. PawnIO is removed only if you choose so, as other programs may use it.
 
-**Copy diagnostics** (진단 정보 복사): copies the model name, BIOS version and fan-related firmware values to the clipboard from the right-click menu, and with advanced fan control on, its service version, the board chip found and the end of the service log. Please paste it when reporting a problem.
+**Copy diagnostic info:** copies the model name, BIOS version and fan-related firmware values to the clipboard from the right-click menu, and with advanced fan control on, its service version, the board chip found and the end of the service log. Please paste it when reporting a problem.
 
 ## Caveats
 
@@ -85,7 +89,8 @@ Requires Go 1.27.3 or later and Windows.
 
     go test ./...                       # includes tests against this PC's real sensors
     go test -short ./...                # hardware-independent tests only
-    go tool mygo build -skip-installer  # build/windows-amd64/Sharktic.exe
+    go tool mygo build                  # build/windows-amd64/Sharktic.exe and sharktic-setup-<version>-amd64.exe
+    go tool mygo build -skip-installer  # Sharktic.exe only
     go build -o build/fan-probe.exe ./cmd/fan-probe
 
 ## License
@@ -118,7 +123,8 @@ Windows PC와 노트북용 트레이 하드웨어 모니터입니다. CPU, GPU, 
 | LG | gram | 미조사 | |
 | Microsoft | Surface | 미조사 | |
 | 한성컴퓨터 | TFG, BossMonster 등 | 미조사 | |
-| 데스크톱 메인보드 | Nuvoton NCT67xx, ITE IT86xx 칩 | 시험 중 | 고급 팬 제어로 팬 속도 표시. 실제 보드에서는 아직 확인 전. 팬 제어는 다음 단계 |
+| 데스크톱 메인보드 | Nuvoton NCT67xx 칩 | 일부 지원 | 고급 팬 제어로 팬 속도 표시. MSI B450M MORTAR MAX(NCT6797D)에서 확인. 팬 제어는 다음 단계 |
+| 데스크톱 메인보드 | ITE IT86xx 칩 | 시험 중 | 고급 팬 제어로 팬 속도 표시. 실제 보드에서는 아직 확인 전 |
 
 - **지원:** 지금 버전에서 동작
 - **일부:** 일부 기능만 동작
@@ -135,13 +141,15 @@ Windows PC와 노트북용 트레이 하드웨어 모니터입니다. CPU, GPU, 
 
 ## 설치
 
-1. [Releases](https://github.com/1bit-JS/Sharktic/releases)에서 `Sharktic-<버전>-windows-amd64.zip`을 받아 원하는 폴더에 풉니다.
-2. `Sharktic.exe`를 실행합니다. 설치 과정은 없고, 트레이에 아이콘이 생깁니다.
+1. [Releases](https://github.com/1bit-JS/Sharktic/releases)에서 `sharktic-setup-<버전>-amd64.exe`를 받아 실행합니다. 관리자 권한 없이 현재 사용자 계정에만 설치됩니다.
+2. 언어 선택 창에서 한국어를 고르고(기본은 English) 설치를 마치면, Sharktic이 실행되고 트레이에 아이콘이 생깁니다.
 3. 서명되지 않은 프로그램이라 Windows SmartScreen이 막으면 "추가 정보 → 실행"을 누릅니다.
+
+언어는 나중에 오른쪽 클릭 메뉴의 Language에서 바꿀 수 있습니다. 설치 없이 쓰려면 `Sharktic-<버전>-windows-amd64.zip`을 받아 원하는 폴더에 풀고 `Sharktic.exe`를 실행합니다. 이때는 영어로 시작합니다.
 
 새 아이콘은 Windows가 트레이 화살표(^) 안에 넣으므로, 밖으로 끌어내면 항상 보입니다.
 
-**지우기:** 고급 팬 제어를 켰다면 오른쪽 클릭 메뉴의 "고급 팬 제어…"에서 먼저 끕니다. 그다음 로그인 시 자동 실행을 끄고, 앱을 종료한 뒤 폴더와 `%AppData%\Sharktic`을 지웁니다.
+**지우기:** 설정 → 앱에서 제거합니다. 고급 팬 제어(관리자 확인 한 번)와 로그인 시 자동 실행도 함께 끕니다. PawnIO 드라이버는 다른 프로그램도 쓸 수 있어서 남기고, 설정은 `%AppData%\Sharktic`에 남습니다. zip 버전은 오른쪽 클릭 메뉴의 "고급 팬 제어…"에서 먼저 끄고, 로그인 시 자동 실행을 끈 뒤 앱을 종료하고 폴더와 `%AppData%\Sharktic`을 지웁니다.
 
 ## 기능
 
@@ -158,7 +166,7 @@ Windows PC와 노트북용 트레이 하드웨어 모니터입니다. CPU, GPU, 
 - 고른 설정은 저장되어, 앱을 다시 켤 때와 절전에서 깨어날 때 다시 적용. "컴퓨터를 켤 때 이 팬 설정 적용"을 켜면 로그인할 때 자동 실행
 
 **고급 팬 제어** (선택 기능): 패널이나 오른쪽 클릭 메뉴에서 켭니다. 관리자 확인 한 번으로 Sharktic 서비스와 [PawnIO](https://pawnio.eu) 드라이버(LibreHardwareMonitor, FanControl도 쓰는 서명된 오픈 소스 드라이버)를 설치합니다. 앱 자체는 계속 관리자 권한 없이 동작합니다.
-- **지금:** CPU가 직접 재는 CPU 온도(Intel. AMD Ryzen은 확인 전). PC 온도가 `--`로 나오는 데스크톱에서도 표시. Nuvoton, ITE 칩을 쓰는 데스크톱 메인보드의 팬 속도(시험 중)
+- **지금:** CPU가 직접 재는 CPU 온도(Intel, AMD Ryzen). PC 온도가 `--`로 나오는 데스크톱에서도 표시. Nuvoton 칩을 쓰는 데스크톱 메인보드의 팬 속도, ITE 칩은 시험 중
 - **다음:** 데스크톱 팬의 온도별 제어, ThinkPad 팬
 - 같은 창에서 언제든 끌 수 있고, 끄면 서비스를 제거합니다. PawnIO는 다른 프로그램도 쓸 수 있어서 선택했을 때만 지웁니다.
 
@@ -178,7 +186,8 @@ Go 1.27.3 이상과 Windows가 필요합니다.
 
     go test ./...                       # 이 PC의 실제 센서까지 검사
     go test -short ./...                # 기기와 무관한 검사만
-    go tool mygo build -skip-installer  # build/windows-amd64/Sharktic.exe
+    go tool mygo build                  # build/windows-amd64/Sharktic.exe and sharktic-setup-<version>-amd64.exe
+    go tool mygo build -skip-installer  # Sharktic.exe only
     go build -o build/fan-probe.exe ./cmd/fan-probe
 
 ## 라이선스

@@ -157,6 +157,11 @@ type app struct {
 
 	// diagnose reads the report of the diagnosis, which sets nothing.
 	diagnose func() diagnosis
+
+	// overheat follows the temperatures, which notify while overheatAlerts
+	// is on.
+	overheat       *overheatWatch
+	overheatAlerts bool
 }
 
 // noChoice and customChoice are the choices that are not a performance mode: none
@@ -191,10 +196,10 @@ func (a *app) presets() []curvePreset {
 func (a *app) choiceLabels() []string {
 	var labels []string
 	for _, m := range a.modes() {
-		labels = append(labels, m.label)
+		labels = append(labels, m.label.String())
 	}
 	for _, p := range a.presets() {
-		labels = append(labels, p.label)
+		labels = append(labels, p.label.String())
 	}
 	return labels
 }
@@ -245,24 +250,24 @@ func ratio(used, total uint64) float64 {
 	return float64(used) / float64(total)
 }
 
-// memoryLine tells the use of a memory, as "사용 9.1 GB · 여유 6.7 GB", or as
-// "사용 9.1 GB" if its size is unknown.
+// memoryLine tells the use of a memory, as "Used 9.1 GB · Free 6.7 GB", or as
+// "Used 9.1 GB" if its size is unknown.
 func memoryLine(used, total uint64) string {
 	if total == 0 {
 		if used == 0 {
 			return "--"
 		}
-		return fmt.Sprintf("사용 %.1f GB", float64(used)/gb)
+		return fmt.Sprintf(tr("Used %.1f GB", "사용 %.1f GB"), float64(used)/gb)
 	}
-	return fmt.Sprintf("사용 %.1f GB · 여유 %.1f GB", float64(used)/gb, float64(total-used)/gb)
+	return fmt.Sprintf(tr("Used %.1f GB · Free %.1f GB", "사용 %.1f GB · 여유 %.1f GB"), float64(used)/gb, float64(total-used)/gb)
 }
 
-// usageLine tells the use of a processor, as "사용 12% · 여유 88%".
+// usageLine tells the use of a processor, as "Used 12% · Free 88%".
 func usageLine(v float64, ok bool) string {
 	if !ok {
 		return "--"
 	}
-	return fmt.Sprintf("사용 %.0f%% · 여유 %.0f%%", v, 100-v)
+	return fmt.Sprintf(tr("Used %.0f%% · Free %.0f%%", "사용 %.0f%% · 여유 %.0f%%"), v, 100-v)
 }
 
 // memorySize tells an amount of memory, as "512 MB" or "1.2 GB".
@@ -331,7 +336,7 @@ func (s *Snapshot) fansLine() string {
 	slices.SortStableFunc(fans, func(a, b FanSpeed) int { return rank(a) - rank(b) })
 	parts := make([]string, len(fans))
 	for i, f := range fans {
-		parts[i] = f.Name + " " + rpm(f.RPM, true)
+		parts[i] = fanLabel(f.Name) + " " + rpm(f.RPM, true)
 	}
 	return strings.Join(parts, " · ")
 }
@@ -371,7 +376,7 @@ func (s Snapshot) toolTip() string {
 	if s.MemTotal > 0 {
 		ram = fmt.Sprintf("%.1f / %.1f GB", float64(s.MemUsed)/gb, float64(s.MemTotal)/gb)
 	}
-	return fmt.Sprintf("PC 온도 %s\nCPU %s\nGPU %s · %s\nRAM %s",
+	return fmt.Sprintf(tr("PC temp %s\nCPU %s\nGPU %s · %s\nRAM %s", "PC 온도 %s\nCPU %s\nGPU %s · %s\nRAM %s"),
 		degrees(s.Temp, s.HasTemp), percent(s.CPUUsage, s.HasCPU),
 		percent(s.GPUUsage, s.HasGPU), degrees(s.GPUTemp, s.HasGPUTemp), ram)
 }
@@ -413,10 +418,10 @@ func (a *app) fanSection(c *ui.Context) {
 		return
 	}
 	ui.Column(c).Gap(4).Children(func() {
-		ui.Text(c, "팬").Bold()
+		ui.Text(c, tr("Fans", "팬")).Bold()
 		line := s.fansLine()
 		if line == "" {
-			line = "속도를 읽을 수 없습니다"
+			line = tr("Speed unavailable", "속도를 읽을 수 없습니다")
 		}
 		ui.Text(c, line).FontSize(12).TextColor(t.TextMuted)
 		if !a.hasFanControl() {
@@ -439,30 +444,32 @@ func (a *app) fanSection(c *ui.Context) {
 		}
 		if a.hasCurves() {
 			// Never marked as chosen, as it opens a window: the note below tells if its curve is on.
-			ui.Button(c.Key("advanced"), "고급 설정 (온도별 팬 곡선)").OnClick(a.openCurveWindow)
+			ui.Button(c.Key("advanced"), tr("Advanced (fan curves by temperature)", "고급 설정 (온도별 팬 곡선)")).OnClick(a.openCurveWindow)
 		}
 		note := func(text string) { ui.Text(c, text).FontSize(12).TextColor(t.TextMuted) }
 		switch {
 		case a.modeChoice == customChoice && !a.fans.canLeaveCurves():
-			note("고급 설정의 곡선 사용 중. 이 기기는 앱에서 펌웨어 곡선으로 되돌릴 수 없어, 앱을 종료해도 곡선이 유지됩니다")
+			note(tr("Using the curves from Advanced. This device cannot go back to the firmware's curves from the app, so the curves stay after you quit",
+				"고급 설정의 곡선 사용 중. 이 기기는 앱에서 펌웨어 곡선으로 되돌릴 수 없어, 앱을 종료해도 곡선이 유지됩니다"))
 		case a.modeChoice == customChoice:
-			note("고급 설정의 곡선 사용 중")
+			note(tr("Using the curves from Advanced", "고급 설정의 곡선 사용 중"))
 		case a.usesCurves(a.modeChoice) && !a.fans.canLeaveCurves():
-			note("앱이 만든 곡선 사용 중. 이 기기는 앱에서 펌웨어 곡선으로 되돌릴 수 없어, 앱을 종료해도 곡선이 유지됩니다")
+			note(tr("Using a curve made by the app. This device cannot go back to the firmware's curves from the app, so the curve stays after you quit",
+				"앱이 만든 곡선 사용 중. 이 기기는 앱에서 펌웨어 곡선으로 되돌릴 수 없어, 앱을 종료해도 곡선이 유지됩니다"))
 		case a.presets() != nil:
-			note("이 기기에는 펌웨어 모드가 없어, 앱이 만든 곡선을 프리셋으로 제공합니다")
+			note(tr("This device has no firmware modes, so the app offers its own curves as presets", "이 기기에는 펌웨어 모드가 없어, 앱이 만든 곡선을 프리셋으로 제공합니다"))
 		default:
-			note("실제 속도는 온도에 따라 펌웨어가 조절합니다")
+			note(tr("The firmware sets the actual speed by temperature", "실제 속도는 온도에 따라 펌웨어가 조절합니다"))
 		}
 		switch {
 		case a.modeFailed:
-			note("적용하지 못했습니다")
+			note(tr("Could not apply", "적용하지 못했습니다"))
 		case a.modeChoice == noChoice && len(a.modes()) > 0:
-			note("현재 모드는 읽을 수 없어 고른 뒤에 표시됩니다")
+			note(tr("The current mode cannot be read; it shows once you choose one", "현재 모드는 읽을 수 없어 고른 뒤에 표시됩니다"))
 		case a.modeChoice == noChoice && a.presets() != nil:
-			note("현재 곡선은 읽을 수 없어 고른 뒤에 표시됩니다")
+			note(tr("The current curve cannot be read; it shows once you choose one", "현재 곡선은 읽을 수 없어 고른 뒤에 표시됩니다"))
 		}
-		if a.setOpenAtLogin != nil && ui.Checkbox(c, &a.openAtLogin, "컴퓨터를 켤 때 이 팬 설정 적용").Changed() {
+		if a.setOpenAtLogin != nil && ui.Checkbox(c, &a.openAtLogin, tr("Apply this fan setting at startup", "컴퓨터를 켤 때 이 팬 설정 적용")).Changed() {
 			if err := a.setOpenAtLogin(a.openAtLogin); err != nil {
 				log.Println("open at login:", err)
 				a.openAtLogin = !a.openAtLogin
@@ -511,35 +518,40 @@ func (a *app) view(c *ui.Context) {
 			ui.Column(c).Gap(12).Padding(0, scrollGutter, 0, 0).Children(func() {
 				ui.Column(c).Gap(4).Children(func() {
 					ui.Row(c).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "PC 온도").Bold().Grow(1)
+						ui.Text(c, tr("PC temperature", "PC 온도")).Bold().Grow(1)
 						ui.Text(c, degrees(s.Temp, s.HasTemp)).Bold()
 					})
-					ui.Text(c, "ACPI 열 영역 · 부품별 센서가 아님").FontSize(12).TextColor(t.TextMuted)
+					note := tr("ACPI thermal zone · not a per-part sensor", "ACPI 열 영역 · 부품별 센서가 아님")
+					if !s.HasTemp {
+						// Most desktop boards have no thermal zone.
+						note = tr("Not reported by this PC, as on most desktops", "이 PC는 알려 주지 않음 · 데스크톱은 대부분 그럼")
+					}
+					ui.Text(c, note).FontSize(12).TextColor(t.TextMuted)
 				})
 				section("CPU", s.CPUUsage, s.HasCPU,
 					usageLine(s.CPUUsage, s.HasCPU))
 				section("GPU", s.GPUUsage, s.HasGPU,
 					usageLine(s.GPUUsage, s.HasGPU),
-					"온도 "+degrees(s.GPUTemp, s.HasGPUTemp),
-					"전용 메모리 "+memoryLine(s.VRAMUsed, s.VRAMTotal))
-				section("메모리", 100*ratio(s.MemUsed, s.MemTotal), s.MemTotal > 0,
+					tr("Temperature ", "온도 ")+degrees(s.GPUTemp, s.HasGPUTemp),
+					tr("Dedicated memory ", "전용 메모리 ")+memoryLine(s.VRAMUsed, s.VRAMTotal))
+				section(tr("Memory", "메모리"), 100*ratio(s.MemUsed, s.MemTotal), s.MemTotal > 0,
 					memoryLine(s.MemUsed, s.MemTotal))
 				if s.HasDiskTemp {
 					ui.Row(c).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "SSD 온도").Bold().Grow(1)
+						ui.Text(c, tr("SSD temperature", "SSD 온도")).Bold().Grow(1)
 						ui.Text(c, degrees(s.DiskTemp, true)).Bold()
 					})
 				}
 				a.fanSection(c)
 				a.advancedSection(c)
 				ui.Divider(c)
-				ranking("CPU 점유 상위", s.TopCPU, func(u ProcessUse) string { return fmt.Sprintf("%.1f%%", u.CPU) })
-				ranking("메모리 점유 상위", s.TopMemory, func(u ProcessUse) string { return memorySize(u.Memory) })
+				ranking(tr("Top CPU", "CPU 점유 상위"), s.TopCPU, func(u ProcessUse) string { return fmt.Sprintf("%.1f%%", u.CPU) })
+				ranking(tr("Top memory", "메모리 점유 상위"), s.TopMemory, func(u ProcessUse) string { return memorySize(u.Memory) })
 			})
 		})
 		ui.Row(c).Padding(0, scrollGutter, 0, 0).Children(func() {
 			ui.Spacer(c)
-			ui.Button(c.Key("quit"), "종료").OnClick(mygo.App.Quit)
+			ui.Button(c.Key("quit"), tr("Quit", "종료")).OnClick(mygo.App.Quit)
 		})
 	})
 }
@@ -547,6 +559,13 @@ func (a *app) view(c *ui.Context) {
 // apply shows a new reading on the icons, their tooltips, and the open panel.
 func (a *app) apply(s Snapshot) {
 	a.snap = s
+	// Followed while off too, so that turning them on tells only of what
+	// stays hot from then.
+	for _, h := range a.overheat.check(s, time.Now()) {
+		if a.overheatAlerts {
+			notifyOverheat(h, s)
+		}
+	}
 	tip := s.toolTip()
 	for _, m := range a.meters {
 		v, ok := m.read(s)
@@ -580,7 +599,7 @@ func (a *app) openCurveWindow() {
 		return
 	}
 	a.curveWindow = mygo.NewWindow(mygo.WindowOptions{
-		Title:     "고급 팬 설정",
+		Title:     tr("Advanced fan settings", "고급 팬 설정"),
 		Width:     860,
 		Height:    600,
 		MinWidth:  760,
@@ -631,35 +650,71 @@ func (a *app) addTray(m *meter) {
 	// Asking where it is adds it now, as NewTray alone adds the icons later, in
 	// no particular order.
 	m.tray.Bounds()
-	openAtLogin := &mygo.MenuItem{
-		Label: "로그인 시 자동 실행",
-		Type:  mygo.MenuItemCheckbox,
-		Click: func(item *mygo.MenuItem, _ *mygo.Window) {
-			if err := mygo.App.SetOpenAtLogin(item.IsChecked()); err != nil {
-				log.Println("open at login:", err)
-			}
-		},
-	}
-	menu := mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "자세히 보기", Click: func(*mygo.MenuItem, *mygo.Window) { a.toggle(m.tray) }},
-		openAtLogin,
-		{Label: "고급 팬 제어…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openAdvancedWindow() }},
-		{Label: "진단 정보 복사", Click: func(*mygo.MenuItem, *mygo.Window) { a.copyDiagnosis() }},
-		mygo.Separator(),
-		{Label: "종료", Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
-	})
 	m.tray.OnClick(func() { a.toggle(m.tray) })
 	m.tray.OnRightClick(func() {
 		if a.panel != nil {
 			a.panel.Close()
 		}
-		// Task Manager can turn it off too, and another icon's menu can change it.
-		openAtLogin.SetChecked(mygo.App.OpenAtLogin())
 		// The menu for this popup only, so that clicks keep toggling the panel.
-		m.tray.SetMenu(menu)
+		m.tray.SetMenu(a.trayMenu(m))
 		defer m.tray.SetMenu(nil)
 		m.tray.PopUpMenu()
 	})
+}
+
+// trayMenu is the menu of an icon, made for each popup: in the language of
+// the moment, and with start at login as it is now, as Task Manager can turn
+// it off too.
+func (a *app) trayMenu(m *meter) *mygo.Menu {
+	language := func(l language, label string) *mygo.MenuItem {
+		return &mygo.MenuItem{
+			Label: label, Type: mygo.MenuItemRadio, Checked: appLanguage() == l,
+			Click: func(*mygo.MenuItem, *mygo.Window) { a.setLanguage(l) },
+		}
+	}
+	return mygo.NewMenu([]*mygo.MenuItem{
+		{Label: tr("Show details", "자세히 보기"), Click: func(*mygo.MenuItem, *mygo.Window) { a.toggle(m.tray) }},
+		{
+			Label:   tr("Start at login", "로그인 시 자동 실행"),
+			Type:    mygo.MenuItemCheckbox,
+			Checked: mygo.App.OpenAtLogin(),
+			Click: func(item *mygo.MenuItem, _ *mygo.Window) {
+				if err := mygo.App.SetOpenAtLogin(item.IsChecked()); err != nil {
+					log.Println("open at login:", err)
+				}
+			},
+		},
+		{
+			Label:   tr("Overheat alerts", "과열 알림"),
+			Type:    mygo.MenuItemCheckbox,
+			Checked: a.overheatAlerts,
+			Click: func(item *mygo.MenuItem, _ *mygo.Window) {
+				a.overheatAlerts = item.IsChecked()
+				saveOverheatAlerts(overheatAlertsPath(), a.overheatAlerts)
+			},
+		},
+		{Label: tr("Advanced fan control…", "고급 팬 제어…"), Click: func(*mygo.MenuItem, *mygo.Window) { a.openAdvancedWindow() }},
+		{Label: tr("Copy diagnostic info", "진단 정보 복사"), Click: func(*mygo.MenuItem, *mygo.Window) { a.copyDiagnosis() }},
+		// Each language by its own name, and "Language" in both, so that
+		// whoever cannot read the other finds it.
+		{Label: tr("Language", "언어 (Language)"), Type: mygo.MenuItemSubmenu, Submenu: []*mygo.MenuItem{
+			language(english, "English"),
+			language(korean, "한국어"),
+		}},
+		mygo.Separator(),
+		{Label: tr("Quit", "종료"), Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
+	})
+}
+
+// setLanguage shows the app in a language, and keeps it for the next start.
+// The open windows change at once, but for their titles.
+func (a *app) setLanguage(l language) {
+	if l == appLanguage() {
+		return
+	}
+	setAppLanguage(l)
+	saveLanguage(languagePath(), l)
+	a.apply(a.snap) // the tooltips and the windows
 }
 
 // copyDiagnosis puts the report of the diagnosis on the clipboard, for the user
@@ -669,9 +724,10 @@ func (a *app) copyDiagnosis() {
 	d.Advanced = a.advancedDiagnosis()
 	mygo.Clipboard.WriteText(d.text())
 	n := mygo.NewNotification(mygo.NotificationOptions{
-		ID:     "diagnosis",
-		Title:  "진단 정보를 복사했습니다",
-		Body:   "메시지나 이슈에 붙여 넣어 보내 주세요. 모델명, BIOS 버전, 팬 관련 펌웨어 값만 들어 있습니다.",
+		ID:    "diagnosis",
+		Title: tr("Diagnostic info copied", "진단 정보를 복사했습니다"),
+		Body: tr("Paste it into a message or an issue. It holds only the model, BIOS version and fan-related firmware values.",
+			"메시지나 이슈에 붙여 넣어 보내 주세요. 모델명, BIOS 버전, 팬 관련 펌웨어 값만 들어 있습니다."),
 		Silent: true,
 	})
 	if err := n.Show(); err != nil {
@@ -682,6 +738,9 @@ func (a *app) copyDiagnosis() {
 func (a *app) ready() {
 	clearDeadTrayIcons()
 	moveOldSettings()
+	a.overheat = newOverheatWatch()
+	a.overheatAlerts = loadOverheatAlerts(overheatAlertsPath())
+	takeLogin()
 	if takeOldLogin() {
 		if err := mygo.App.SetOpenAtLogin(true); err != nil {
 			log.Println("open at login:", err)
@@ -755,8 +814,12 @@ func main() {
 			os.Exit(runSetup(os.Args[1:]))
 		}
 	}
+	setAppLanguage(loadLanguage(languagePath()))
 	a := &app{}
 	mygo.App.SetName(appName)
+	if startInstalledAtLogin() {
+		return
+	}
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
 	}

@@ -31,8 +31,8 @@ func TestViewShowsReading(t *testing.T) {
 	}}
 	tt := ui.NewTester(a.view, 300, panelHeight)
 	for _, want := range []string{
-		"사용 12% · 여유 88%", "PC 온도", "ACPI 열 영역", "67°C", "온도 43°C",
-		"전용 메모리 사용 1.0 GB · 여유 3.0 GB", "사용 4.0 GB · 여유 12.0 GB", "25%",
+		"Used 12% · Free 88%", "PC temperature", "ACPI thermal zone", "67°C", "Temperature 43°C",
+		"Dedicated memory Used 1.0 GB · Free 3.0 GB", "Used 4.0 GB · Free 12.0 GB", "25%",
 		"chrome (23)", "6.2%", "Code", "2.0 GB", "512 MB",
 	} {
 		if !tt.HasText(want) {
@@ -43,7 +43,7 @@ func TestViewShowsReading(t *testing.T) {
 
 func TestViewWithoutSensors(t *testing.T) {
 	tt := ui.NewTester((&app{}).view, 300, panelHeight)
-	if !tt.HasText("온도 --") {
+	if !tt.HasText("Temperature --") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 	if tt.HasText("%") {
@@ -53,7 +53,7 @@ func TestViewWithoutSensors(t *testing.T) {
 
 func TestViewKeepsARealZero(t *testing.T) {
 	a := &app{snap: Snapshot{HasCPU: true, HasGPU: true, MemTotal: gb}}
-	if tt := ui.NewTester(a.view, 300, panelHeight); !tt.HasText("사용 0% · 여유 100%") {
+	if tt := ui.NewTester(a.view, 300, panelHeight); !tt.HasText("Used 0% · Free 100%") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 }
@@ -79,7 +79,7 @@ func TestFanRPM(t *testing.T) {
 
 func TestViewWithoutFans(t *testing.T) {
 	// No fan section, but the way to advanced fan control.
-	if tt := ui.NewTester((&app{}).view, 300, panelHeight); slices.Contains(tt.Texts(), "팬") || tt.HasText("균형") || !tt.HasText("알아보기") {
+	if tt := ui.NewTester((&app{}).view, 300, panelHeight); slices.Contains(tt.Texts(), "Fans") || tt.HasText("Balanced") || !tt.HasText("Learn more") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 }
@@ -88,13 +88,13 @@ func TestViewWithService(t *testing.T) {
 	a := &app{snap: Snapshot{ServiceRunning: true, CPUTemp: 61, HasCPUTemp: true}}
 	a.advanced.installed = true
 	tt := ui.NewTester(a.view, 300, panelHeight)
-	if !tt.HasText("CPU 온도") || !tt.HasText("61°C") || tt.HasText("알아보기") {
+	if !tt.HasText("CPU temperature") || !tt.HasText("61°C") || tt.HasText("Learn more") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 	// Installed but not answering yet: no offer to install it.
 	a = &app{}
 	a.advanced.installed = true
-	if tt := ui.NewTester(a.view, 300, panelHeight); tt.HasText("알아보기") || tt.HasText("CPU 온도") {
+	if tt := ui.NewTester(a.view, 300, panelHeight); tt.HasText("Learn more") || tt.HasText("CPU temperature") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 }
@@ -119,13 +119,13 @@ func TestAdvancedWindowStates(t *testing.T) {
 		installed bool
 		want      string
 	}{
-		{advancedIdle, turnOn, false, "켜기"},
-		{advancedIdle, turnOn, true, "PawnIO 드라이버도 제거"},
-		{advancedWorking, turnOn, false, "고급 팬 제어에 필요한 구성 요소를 설치하고 있어요"},
-		{advancedWorking, turnOff, false, "고급 팬 제어를 끄고 있어요"},
-		{advancedWorking, updateService, true, "Sharktic 서비스를 새 버전으로 바꾸고 있어요"},
-		{advancedDone, turnOff, false, "고급 팬 제어를 껐어요"},
-		{advancedDone, updateService, true, "Sharktic 서비스를 업데이트했어요"},
+		{advancedIdle, turnOn, false, "Turn on"},
+		{advancedIdle, turnOn, true, "Also remove the PawnIO driver"},
+		{advancedWorking, turnOn, false, "Installing what advanced fan control needs"},
+		{advancedWorking, turnOff, false, "Turning off advanced fan control"},
+		{advancedWorking, updateService, true, "Updating the Sharktic service"},
+		{advancedDone, turnOff, false, "Advanced fan control is off"},
+		{advancedDone, updateService, true, "The Sharktic service is updated"},
 	} {
 		a.advanced.step, a.advanced.work, a.advanced.installed = tc.step, tc.work, tc.installed
 		if tt := ui.NewTester(a.advancedView, 560, 620); !tt.HasText(tc.want) {
@@ -137,15 +137,15 @@ func TestAdvancedWindowStates(t *testing.T) {
 func TestServiceUpdateOffered(t *testing.T) {
 	a := &app{snap: Snapshot{ServiceRunning: true, ServiceVersion: "0.0.1", CPUTemp: 50, HasCPUTemp: true}}
 	a.advanced.installed = true
-	if tt := ui.NewTester(a.advancedView, 560, 620); !tt.HasText("서비스 업데이트") || !tt.HasText("끄기") {
+	if tt := ui.NewTester(a.advancedView, 560, 620); !tt.HasText("Update service") || !tt.HasText("Turn off") {
 		t.Errorf("window: %q", tt.Texts())
 	}
-	if tt := ui.NewTester(a.view, 300, panelHeight); !tt.HasText("서비스 업데이트") {
+	if tt := ui.NewTester(a.view, 300, panelHeight); !tt.HasText("Update service") {
 		t.Errorf("panel: %q", tt.Texts())
 	}
 	// The same version: nothing to update.
 	a.snap.ServiceVersion = mygo.App.Version()
-	if tt := ui.NewTester(a.advancedView, 560, 620); tt.HasText("서비스 업데이트") {
+	if tt := ui.NewTester(a.advancedView, 560, 620); tt.HasText("Update service") {
 		t.Errorf("window: %q", tt.Texts())
 	}
 }
@@ -198,7 +198,7 @@ func TestServiceStateRequests(t *testing.T) {
 func TestViewShowsFansWithoutModes(t *testing.T) {
 	a := &app{snap: Snapshot{Fans: []FanSpeed{{cpuFanName, 3800}}}}
 	tt := ui.NewTester(a.view, 300, panelHeight)
-	if !tt.HasText("CPU 3800 rpm") || tt.HasText("균형") {
+	if !tt.HasText("CPU 3800 rpm") || tt.HasText("Balanced") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 }
@@ -211,32 +211,32 @@ func TestChoosingAMode(t *testing.T) {
 		return fail
 	}}}
 	tt := ui.NewTester(a.view, 300, panelHeight+modesHeight)
-	if !tt.HasText("현재 모드는 읽을 수 없어") || tt.HasText("수동") || len(set) != 0 {
+	if !tt.HasText("The current mode cannot be read") || tt.HasText("Manual") || len(set) != 0 {
 		t.Fatalf("before a choice: set %v, texts %q", set, tt.Texts())
 	}
-	if err := tt.Click("터보"); err != nil {
+	if err := tt.Click("Turbo"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if len(set) != 1 || set[0] != 1 || a.modeChoice != 2 || tt.HasText("현재 모드는 읽을 수 없어") {
+	if len(set) != 1 || set[0] != 1 || a.modeChoice != 2 || tt.HasText("The current mode cannot be read") {
 		t.Errorf("turbo: set %v, choice %d, texts %q", set, a.modeChoice, tt.Texts())
 	}
 
 	fail = errors.New("refused")
-	if err := tt.Click("조용함"); err != nil {
+	if err := tt.Click("Silent"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if len(set) != 2 || set[1] != 2 || a.modeChoice != 2 || !tt.HasText("적용하지 못했습니다") {
+	if len(set) != 2 || set[1] != 2 || a.modeChoice != 2 || !tt.HasText("Could not apply") {
 		t.Errorf("refused: set %v, choice %d, texts %q", set, a.modeChoice, tt.Texts())
 	}
 
 	fail = nil
-	if err := tt.Click("터보"); err != nil {
+	if err := tt.Click("Turbo"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if len(set) != 3 || set[2] != 1 || a.modeChoice != 2 || tt.HasText("적용하지 못했습니다") {
+	if len(set) != 3 || set[2] != 1 || a.modeChoice != 2 || tt.HasText("Could not apply") {
 		t.Errorf("turbo again: set %v, choice %d, texts %q", set, a.modeChoice, tt.Texts())
 	}
 }
@@ -392,7 +392,7 @@ func TestAppWithoutAFileKeepsNoChoice(t *testing.T) {
 }
 
 func TestOpenAtLoginCheckbox(t *testing.T) {
-	const label = "컴퓨터를 켤 때 이 팬 설정 적용"
+	const label = "Apply this fan setting at startup"
 	var fail error
 	var set []bool
 	a := &app{modeChoice: -1, fans: modesAndCurves(),
@@ -423,7 +423,7 @@ func TestTypingWhileThePressIsHeld(t *testing.T) {
 		curves: [2]fanCurve{defaultCurve, defaultCurve}, appliedCurves: [2]fanCurve{defaultCurve, defaultCurve},
 	}
 	tt := ui.NewTester(a.curveView, 860, 600)
-	input, _ := tt.Find("8구간 온도")
+	input, _ := tt.Find("Point 8 temperature")
 	x, y := input.X+20, input.Y+input.H/2
 	tt.Press(x, y)
 	tt.Release(x, y)
@@ -453,16 +453,16 @@ func TestCurveWindow(t *testing.T) {
 	}
 	tt := ui.NewTester(a.curveView, 860, 600)
 	for i := 1; i <= 8; i++ {
-		if _, ok := tt.Find(fmt.Sprintf("%d구간 온도", i)); !ok {
+		if _, ok := tt.Find(fmt.Sprintf("Point %d temperature", i)); !ok {
 			t.Errorf("no input of section %d", i)
 		}
-		if _, ok := tt.Find(fmt.Sprintf("%d구간 팬 속도", i)); !ok {
+		if _, ok := tt.Find(fmt.Sprintf("Point %d fan speed", i)); !ok {
 			t.Errorf("no level of section %d", i)
 		}
 	}
 
 	// Editing does not reach the firmware.
-	input, _ := tt.Find("1구간 팬 속도") // with its buttons: the text is on the left
+	input, _ := tt.Find("Point 1 fan speed") // with its buttons: the text is on the left
 	tt.ClickAt(input.X+20, input.Y+input.H/2)
 	tt.Key(ui.Ctrl, ui.KeyA)
 	tt.Type("28")
@@ -474,10 +474,10 @@ func TestCurveWindow(t *testing.T) {
 	// A curve the firmware should not get cannot be applied, and says why.
 	a.curves[cpuFanTab][1].Temp = 40
 	tt.Frame()
-	if !tt.HasText("CPU 팬: 2구간의 온도는") {
+	if !tt.HasText("CPU fan: The temperature of point 2") {
 		t.Errorf("texts %q", tt.Texts())
 	}
-	if err := tt.Click("적용"); err != nil {
+	if err := tt.Click("Apply"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
@@ -489,10 +489,10 @@ func TestCurveWindow(t *testing.T) {
 	// A curve below a floor warns, and can be applied.
 	a.curves[cpuFanTab][4].Level = 50
 	tt.Frame()
-	if !tt.HasText("CPU 팬: 주의: 70°C에서") {
+	if !tt.HasText("CPU fan: Caution: at 70°C") {
 		t.Errorf("texts %q", tt.Texts())
 	}
-	if err := tt.Click("적용"); err != nil {
+	if err := tt.Click("Apply"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
@@ -503,11 +503,11 @@ func TestCurveWindow(t *testing.T) {
 	a.curves[cpuFanTab][4].Level = 55
 	tt.Frame()
 
-	if err := tt.Click("적용"); err != nil {
+	if err := tt.Click("Apply"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if cpu == nil || cpu[8] != 28 || gpu[8] != 25 || a.modeChoice != customChoice || a.appliedCurves != a.curves || !tt.HasText("적용하고 저장했습니다") {
+	if cpu == nil || cpu[8] != 28 || gpu[8] != 25 || a.modeChoice != customChoice || a.appliedCurves != a.curves || !tt.HasText("Applied and saved") {
 		t.Errorf("applied: cpu %v, gpu %v, choice %d, texts %q", cpu, gpu, a.modeChoice, tt.Texts())
 	}
 	if got, ok := loadCurves(curvesPath()); !ok || got != a.curves {
@@ -520,26 +520,26 @@ func TestCurveWindow(t *testing.T) {
 	a.curves[cpuFanTab][0].Level = 21
 	a.applyCurves()
 	tt.Frame()
-	if a.appliedCurves != before || a.modeChoice != -1 || !tt.HasText("적용하지 못했습니다") {
+	if a.appliedCurves != before || a.modeChoice != -1 || !tt.HasText("Could not apply") {
 		t.Errorf("refused: choice %d, texts %q", a.modeChoice, tt.Texts())
 	}
 
 	// Going back, copying, and the default.
-	if err := tt.Click("되돌리기"); err != nil {
+	if err := tt.Click("Undo"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
 	if a.curves != before {
 		t.Errorf("undo: %v", a.curves[cpuFanTab])
 	}
-	if err := tt.Click("GPU 팬에 복사"); err != nil {
+	if err := tt.Click("Copy to GPU fan"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
 	if a.curves[gpuFanTab][0].Level != 28 {
 		t.Errorf("copy: %v", a.curves[gpuFanTab][0])
 	}
-	if err := tt.Click("기본값"); err != nil {
+	if err := tt.Click("Default"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
@@ -551,7 +551,7 @@ func TestCurveWindow(t *testing.T) {
 func TestPanelShowsAppliedCurve(t *testing.T) {
 	a := &app{modeChoice: customChoice, fans: modesAndCurves()}
 	tt := ui.NewTester(a.view, 300, panelHeight+modesHeight)
-	if !tt.HasText("고급 설정") || !tt.HasText("곡선 사용 중") || tt.HasText("실제 속도는") {
+	if !tt.HasText("Advanced (fan curves") || !tt.HasText("Using the curves") || tt.HasText("The firmware sets the actual speed") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 }
@@ -561,7 +561,7 @@ func TestAdvancedButtonNeverLooksPressed(t *testing.T) {
 	render := func(choice int) (*image.RGBA, ui.Rect) {
 		a := &app{modeChoice: choice, fans: modesAndCurves()}
 		tt := ui.NewTester(a.view, 300, panelHeight+modesHeight)
-		r, ok := tt.Find("고급 설정 (온도별 팬 곡선)")
+		r, ok := tt.Find("Advanced (fan curves by temperature)")
 		if !ok {
 			t.Fatalf("no button in %q", tt.Texts())
 		}
@@ -593,7 +593,7 @@ func TestToolTipWithoutMemory(t *testing.T) {
 }
 
 func TestMemoryLineOfUnknownSize(t *testing.T) {
-	if got := memoryLine(2*gb, 0); got != "사용 2.0 GB" {
+	if got := memoryLine(2*gb, 0); got != "Used 2.0 GB" {
 		t.Errorf("got %q", got)
 	}
 	if got := memoryLine(0, 0); got != "--" {
@@ -1056,15 +1056,15 @@ func TestDiagnosisText(t *testing.T) {
 	}
 	text := d.text()
 	for _, want := range []string{
-		"팬 설정은 바꾸지 않았습니다",
+		"no fan setting was changed",
 		"model:        ROG Strix G512LI_G512LI\n",
 		"family:       -\n",
 		"bios:         G512LI.311 04/28/2021\n",
 		"fan backend:  asus\n",
-		"0x00110013  00010023  CPU 팬 속도 · 있음 (3500 rpm)\n",
-		"0x00120075  00010003  성능 모드 · 있음\n",
-		"0x00110024  FFFFFFFE  CPU 팬 곡선 · 없음\n",
-		"0x00110019  --------  성능 모드 (Vivobook 방식) · 응답 없음\n",
+		"0x00110013  00010023  CPU fan speed · present (3500 rpm)\n",
+		"0x00120075  00010003  performance mode · present\n",
+		"0x00110024  FFFFFFFE  CPU fan curve · absent\n",
+		"0x00110019  --------  performance mode (Vivobook) · no answer\n",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("no %q in\n%s", want, text)
@@ -1146,22 +1146,22 @@ func TestCurvesWithModesStartFromBalanced(t *testing.T) {
 func TestPanelWithCurvesOnly(t *testing.T) {
 	a := &app{modeChoice: -1, fans: &fakeFans{setCurvesFn: func(c, g fanCurve) error { return nil }, noLeaving: true}}
 	tt := ui.NewTester(a.view, 300, panelHeight+modesHeight)
-	for _, want := range []string{"조용함", "균형", "최대", "고급 설정 (온도별 팬 곡선)", "앱이 만든 곡선을 프리셋으로", "현재 곡선은 읽을 수 없어"} {
+	for _, want := range []string{"Silent", "Balanced", "Max", "Advanced (fan curves by temperature)", "the app offers its own curves as presets", "The current curve cannot be read"} {
 		if !tt.HasText(want) {
 			t.Errorf("before: no %q in %q", want, tt.Texts())
 		}
 	}
-	if tt.HasText("터보") || tt.HasText("현재 모드는 읽을 수 없어") {
+	if tt.HasText("Turbo") || tt.HasText("The current mode cannot be read") {
 		t.Errorf("before: texts %q", tt.Texts())
 	}
 	a.modeChoice = customChoice
 	tt.Frame()
-	if !tt.HasText("고급 설정의 곡선 사용 중. 이 기기는") {
+	if !tt.HasText("Using the curves from Advanced. This device") {
 		t.Errorf("curve on: texts %q", tt.Texts())
 	}
 	a.modeChoice = 0
 	tt.Frame()
-	if !tt.HasText("앱이 만든 곡선 사용 중. 이 기기는") || tt.HasText("현재 곡선은 읽을 수 없어") {
+	if !tt.HasText("Using a curve made by the app. This device") || tt.HasText("The current curve cannot be read") {
 		t.Errorf("preset on: texts %q", tt.Texts())
 	}
 }
@@ -1180,7 +1180,7 @@ func TestChoosingAPreset(t *testing.T) {
 	}
 	a := newApp()
 	tt := ui.NewTester(a.view, 300, panelHeight+modesHeight)
-	if err := tt.Click("최대"); err != nil {
+	if err := tt.Click("Max"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
@@ -1188,7 +1188,7 @@ func TestChoosingAPreset(t *testing.T) {
 		t.Fatalf("max: set %v, choice %d", set, a.modeChoice)
 	}
 
-	// It comes back by its label.
+	// It comes back by its id.
 	set = nil
 	if b := newApp(); !b.restoreChoice() || b.modeChoice != 2 || len(set) != 1 || set[0][0] != curvePresets[2].curve {
 		t.Errorf("restored: choice %d, set %v", b.modeChoice, set)
@@ -1196,11 +1196,11 @@ func TestChoosingAPreset(t *testing.T) {
 
 	// A refusal leaves no choice, as the curves on are unknown.
 	fail = errors.New("refused")
-	if err := tt.Click("조용함"); err != nil {
+	if err := tt.Click("Silent"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if a.modeChoice != noChoice || !tt.HasText("적용하지 못했습니다") {
+	if a.modeChoice != noChoice || !tt.HasText("Could not apply") {
 		t.Errorf("refused: choice %d, texts %q", a.modeChoice, tt.Texts())
 	}
 
@@ -1233,7 +1233,7 @@ func TestPresetsNeitherFailNorWarn(t *testing.T) {
 func TestPanelWithModesOnly(t *testing.T) {
 	a := &app{modeChoice: -1, fans: &fakeFans{setModeFn: func(uint32) error { return nil }}}
 	tt := ui.NewTester(a.view, 300, panelHeight+modesHeight)
-	if !tt.HasText("균형") || tt.HasText("고급 설정") || tt.HasText("최대") || tt.HasText("프리셋") {
+	if !tt.HasText("Balanced") || tt.HasText("Advanced (fan curves") || tt.HasText("Max") || tt.HasText("presets") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 }
@@ -1311,7 +1311,7 @@ func TestASUSRefusesUnlistedModes(t *testing.T) {
 func TestPanelWithoutABackend(t *testing.T) {
 	a := &app{modeChoice: -1}
 	tt := ui.NewTester(a.view, 300, panelHeight)
-	if tt.HasText("균형") || tt.HasText("고급 설정") {
+	if tt.HasText("Balanced") || tt.HasText("Advanced (fan curves") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 	if a.hasFanControl() || a.modes() != nil || a.hasCurves() {
@@ -1539,7 +1539,7 @@ func TestSuperIOITE(t *testing.T) {
 }
 
 func TestSuperIONoneOrUnknown(t *testing.T) {
-	if chip, note, err := probeSuperIO(&fakeChip{port: 0x4E}); chip != nil || err != nil || note != "칩 없음" {
+	if chip, note, err := probeSuperIO(&fakeChip{port: 0x4E}); chip != nil || err != nil || note != "no chip" {
 		t.Errorf("none: %v %q %v", chip, note, err)
 	}
 	f := &fakeChip{port: 0x4E, enter: []byte{0x87, 0x87}, conf: map[byte]map[byte]byte{0: {0x20: 0x12, 0x21: 0x34}}}
@@ -1583,10 +1583,47 @@ func TestLastLines(t *testing.T) {
 func TestDiagnosisTellsAdvanced(t *testing.T) {
 	d := diagnosis{App: "Sharktic", Advanced: []string{"service:      0.2.0", "board chip:   Nuvoton NCT6798D"}}
 	text := d.text()
-	if !strings.Contains(text, "[고급 팬 제어]\nservice:      0.2.0\nboard chip:   Nuvoton NCT6798D\n") {
+	if !strings.Contains(text, "[advanced fan control]\nservice:      0.2.0\nboard chip:   Nuvoton NCT6798D\n") {
 		t.Errorf("%s", text)
 	}
-	if strings.Contains((diagnosis{}).text(), "고급 팬 제어") {
+	if strings.Contains((diagnosis{}).text(), "[advanced fan control]") {
 		t.Error("section without lines")
+	}
+}
+
+func TestCompareVersions(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{
+		{"0.2.1", "0.2.1", 0},
+		{"0.2.1", "0.2.2", -1},
+		{"0.10.0", "0.9.9", 1},
+		{"0.3", "0.3.0", 0},
+		{"", "0.2.1", -1},
+	} {
+		if got := compareVersions(c.a, c.b); got != c.want {
+			t.Errorf("compareVersions(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+func TestCPUTempKeepsLastGood(t *testing.T) {
+	th := &cpuThermal{}
+	if c, ok := th.check(0, errors.New("busy")); ok {
+		t.Fatalf("a failure with nothing before gave %v", c)
+	}
+	if c, ok := th.check(60, nil); !ok || c != 60 {
+		t.Fatalf("good read gave %v, %v", c, ok)
+	}
+	if c, ok := th.check(0, errors.New("busy")); !ok || c != 60 {
+		t.Fatalf("failure right after gave %v, %v", c, ok)
+	}
+	if c, ok := th.check(200, nil); !ok || c != 60 {
+		t.Fatalf("out of range right after gave %v, %v", c, ok)
+	}
+	th.lastAt = th.lastAt.Add(-cpuTempKeep - time.Second)
+	if _, ok := th.check(0, errors.New("busy")); ok {
+		t.Fatal("an old reading stood in")
 	}
 }

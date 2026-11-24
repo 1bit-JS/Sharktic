@@ -32,15 +32,17 @@ var defaultCurve = fanCurve{{40, 25}, {50, 30}, {60, 40}, {65, 45}, {70, 55}, {7
 // curvePreset is a curve that the app offers as a choice, where the firmware has
 // curves but no modes.
 type curvePreset struct {
-	label string
+	// id keeps the preset in the settings, and label shows it.
+	id    string
+	label msg
 	curve fanCurve
 }
 
 // curvePresets reach the safety floors, so that none of them warns.
 var curvePresets = []curvePreset{
-	{"조용함", fanCurve{{40, 20}, {50, 25}, {60, 30}, {65, 40}, {70, 55}, {75, 70}, {80, 85}, {85, 100}}},
-	{"균형", defaultCurve},
-	{"최대", fanCurve{{40, 40}, {50, 50}, {60, 60}, {65, 70}, {70, 80}, {75, 90}, {80, 100}, {85, 100}}},
+	{"quiet", msg{"Silent", "조용함"}, fanCurve{{40, 20}, {50, 25}, {60, 30}, {65, 40}, {70, 55}, {75, 70}, {80, 85}, {85, 100}}},
+	{"balanced", msg{"Balanced", "균형"}, defaultCurve},
+	{"max", msg{"Max", "최대"}, fanCurve{{40, 40}, {50, 50}, {60, 60}, {65, 70}, {70, 80}, {75, 90}, {80, 100}, {85, 100}}},
 }
 
 // safetyFloors are the fan levels that a curve should reach by these temperatures.
@@ -75,18 +77,18 @@ func (c fanCurve) levelAt(temp float64) float64 {
 func (c fanCurve) problem() string {
 	for i, p := range c {
 		if math.Round(p.Temp) < curveMinTemp || math.Round(p.Temp) > curveMaxTemp {
-			return fmt.Sprintf("%d구간의 온도는 %d~%d°C여야 합니다", i+1, curveMinTemp, curveMaxTemp)
+			return fmt.Sprintf(tr("The temperature of point %d must be %d–%d°C", "%d구간의 온도는 %d~%d°C여야 합니다"), i+1, curveMinTemp, curveMaxTemp)
 		}
 		if math.Round(p.Level) < minFanLevel || math.Round(p.Level) > 100 {
-			return fmt.Sprintf("%d구간의 팬 속도는 %d~100%%여야 합니다", i+1, minFanLevel)
+			return fmt.Sprintf(tr("The fan speed of point %d must be %d–100%%", "%d구간의 팬 속도는 %d~100%%여야 합니다"), i+1, minFanLevel)
 		}
 	}
 	for i := 1; i < len(c); i++ {
 		if math.Round(c[i].Temp) <= math.Round(c[i-1].Temp) {
-			return fmt.Sprintf("%d구간의 온도는 %d구간보다 높아야 합니다", i+1, i)
+			return fmt.Sprintf(tr("The temperature of point %d must be higher than point %d's", "%d구간의 온도는 %d구간보다 높아야 합니다"), i+1, i)
 		}
 		if math.Round(c[i].Level) < math.Round(c[i-1].Level) {
-			return fmt.Sprintf("%d구간의 팬 속도는 %d구간보다 낮을 수 없습니다", i+1, i)
+			return fmt.Sprintf(tr("The fan speed of point %d cannot be lower than point %d's", "%d구간의 팬 속도는 %d구간보다 낮을 수 없습니다"), i+1, i)
 		}
 	}
 	return ""
@@ -96,7 +98,8 @@ func (c fanCurve) problem() string {
 func (c fanCurve) warning() string {
 	for _, f := range safetyFloors {
 		if c.levelAt(f.Temp) < f.Level {
-			return fmt.Sprintf("주의: %.0f°C에서 팬 속도가 권장 %.0f%%보다 낮아 성능이 떨어지고 더 뜨거워질 수 있습니다", f.Temp, f.Level)
+			return fmt.Sprintf(tr("Caution: at %.0f°C the fan speed is below the recommended %.0f%%, so the PC may run hotter and slower",
+				"주의: %.0f°C에서 팬 속도가 권장 %.0f%%보다 낮아 성능이 떨어지고 더 뜨거워질 수 있습니다"), f.Temp, f.Level)
 		}
 	}
 	return ""
@@ -106,10 +109,10 @@ func (c fanCurve) warning() string {
 // something in.
 func ofEitherFan(curves [2]fanCurve, check func(fanCurve) string) string {
 	if p := check(curves[cpuFanTab]); p != "" {
-		return "CPU 팬: " + p
+		return tr("CPU fan: ", "CPU 팬: ") + p
 	}
 	if p := check(curves[gpuFanTab]); p != "" {
-		return "GPU 팬: " + p
+		return tr("GPU fan: ", "GPU 팬: ") + p
 	}
 	return ""
 }
@@ -191,7 +194,7 @@ func saveCurves(path string, curves [2]fanCurve) error {
 type savedChoice struct {
 	Kind   string // choiceMode, choicePreset or choiceCurve
 	Mode   uint32 `json:",omitempty"`
-	Preset string `json:",omitempty"` // by its label
+	Preset string `json:",omitempty"` // by its id
 }
 
 const (
@@ -211,7 +214,7 @@ func (a *app) saveChoice(i int) {
 		saved = savedChoice{Kind: choiceCurve}
 	default:
 		if p := a.presets(); p != nil {
-			saved = savedChoice{Kind: choicePreset, Preset: p[i].label}
+			saved = savedChoice{Kind: choicePreset, Preset: p[i].id}
 		} else {
 			saved = savedChoice{Kind: choiceMode, Mode: a.modes()[i].value}
 		}
@@ -251,7 +254,7 @@ func (a *app) restoreChoice() bool {
 		}
 	case choicePreset:
 		for i, p := range a.presets() {
-			if p.label == saved.Preset {
+			if p.id == saved.Preset || p.label.ko == saved.Preset { // by its label, before 0.2.2
 				choice = i
 			}
 		}
@@ -272,11 +275,11 @@ func (a *app) applyCurves() {
 	switch {
 	case a.modeFailed:
 		a.appliedCurves = previous
-		a.curveStatus = "적용하지 못했습니다. 이 기기가 사용자 곡선을 지원하지 않을 수 있습니다"
+		a.curveStatus = tr("Could not apply. This device may not support custom curves", "적용하지 못했습니다. 이 기기가 사용자 곡선을 지원하지 않을 수 있습니다")
 	case saveCurves(curvesPath(), a.curves) != nil:
-		a.curveStatus = "적용했지만 저장하지 못했습니다"
+		a.curveStatus = tr("Applied, but could not save", "적용했지만 저장하지 못했습니다")
 	default:
-		a.curveStatus = "적용하고 저장했습니다"
+		a.curveStatus = tr("Applied and saved", "적용하고 저장했습니다")
 	}
 }
 
@@ -289,33 +292,33 @@ func (a *app) curveView(c *ui.Context) {
 	ui.Column(c).Fill().Background(t.Surface).Padding(16).Gap(12).Children(func() {
 		cpuFan, cpuOK := s.fan(cpuFanName)
 		gpuFan, gpuOK := s.fan(gpuFanName)
-		note(fmt.Sprintf("지금: CPU 팬 %s · GPU 팬 %s · PC %s · GPU %s",
+		note(fmt.Sprintf(tr("Now: CPU fan %s · GPU fan %s · PC %s · GPU %s", "지금: CPU 팬 %s · GPU 팬 %s · PC %s · GPU %s"),
 			rpm(cpuFan, cpuOK), rpm(gpuFan, gpuOK),
 			degrees(s.Temp, s.HasTemp), degrees(s.GPUTemp, s.HasGPUTemp)))
-		ui.Tabs(c.Key("fan"), &a.curveTab, "CPU 팬", "GPU 팬")
+		ui.Tabs(c.Key("fan"), &a.curveTab, tr("CPU fan", "CPU 팬"), tr("GPU fan", "GPU 팬"))
 
 		curve := &a.curves[a.curveTab]
 		ui.Row(c).Grow(1).Gap(16).AlignItems(ui.Stretch).Children(func() {
 			ui.Column(c).Width(360).Gap(4).Children(func() {
 				ui.Row(c).Gap(8).Children(func() {
-					ui.Text(c, "구간").FontSize(12).TextColor(t.TextMuted).Width(28)
-					ui.Text(c, "온도 (°C)").FontSize(12).TextColor(t.TextMuted).Width(160)
-					ui.Text(c, "팬 속도 (%)").FontSize(12).TextColor(t.TextMuted).Width(160)
+					ui.Text(c, tr("Point", "구간")).FontSize(12).TextColor(t.TextMuted).Width(28)
+					ui.Text(c, tr("Temperature (°C)", "온도 (°C)")).FontSize(12).TextColor(t.TextMuted).Width(160)
+					ui.Text(c, tr("Fan speed (%)", "팬 속도 (%)")).FontSize(12).TextColor(t.TextMuted).Width(160)
 				})
 				for i := range curve {
 					p := &curve[i]
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, fmt.Sprint(i+1)).FontSize(12).Width(28)
 						ui.NumberInput(c.Key(fmt.Sprint("temp ", a.curveTab, i)), &p.Temp, curveMinTemp, curveMaxTemp, 1).
-							Width(160).Label(fmt.Sprintf("%d구간 온도", i+1))
+							Width(160).Label(fmt.Sprintf(tr("Point %d temperature", "%d구간 온도"), i+1))
 						ui.NumberInput(c.Key(fmt.Sprint("level ", a.curveTab, i)), &p.Level, minFanLevel, 100, 1).
-							Width(160).Label(fmt.Sprintf("%d구간 팬 속도", i+1))
+							Width(160).Label(fmt.Sprintf(tr("Point %d fan speed", "%d구간 팬 속도"), i+1))
 					})
 				}
 			})
 			ui.Column(c).Grow(1).Gap(4).Children(func() {
 				ui.Column(c).Grow(1).Draw(func(p *ui.Painter, r ui.Rect) { drawCurve(p, r, t, *curve) })
-				note("실선: 이 곡선 · 점선: 권장 하한")
+				note(tr("Solid: this curve · Dashed: recommended minimum", "실선: 이 곡선 · 점선: 권장 하한"))
 			})
 		})
 
@@ -325,19 +328,19 @@ func (a *app) curveView(c *ui.Context) {
 		case warning != "":
 			ui.Text(c, warning).FontSize(12).Bold()
 		default:
-			note("곡선의 온도는 펌웨어가 읽는 센서 기준이라, 위 PC 온도와 다를 수 있습니다")
+			note(tr("Curve temperatures follow the sensor the firmware reads, so they may differ from the PC temperature above", "곡선의 온도는 펌웨어가 읽는 센서 기준이라, 위 PC 온도와 다를 수 있습니다"))
 		}
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Button(c.Key("default"), "기본값").OnClick(func() { *curve = defaultCurve; a.curveStatus = "" })
-			other, label := gpuFanTab, "GPU 팬에 복사"
+			ui.Button(c.Key("default"), tr("Default", "기본값")).OnClick(func() { *curve = defaultCurve; a.curveStatus = "" })
+			other, label := gpuFanTab, tr("Copy to GPU fan", "GPU 팬에 복사")
 			if a.curveTab == gpuFanTab {
-				other, label = cpuFanTab, "CPU 팬에 복사"
+				other, label = cpuFanTab, tr("Copy to CPU fan", "CPU 팬에 복사")
 			}
 			ui.Button(c.Key("copy"), label).OnClick(func() { a.curves[other] = *curve; a.curveStatus = "" })
-			ui.Button(c.Key("undo"), "되돌리기").Disabled(a.curves == a.appliedCurves).
+			ui.Button(c.Key("undo"), tr("Undo", "되돌리기")).Disabled(a.curves == a.appliedCurves).
 				OnClick(func() { a.curves = a.appliedCurves; a.curveStatus = "" })
 			ui.Text(c, a.curveStatus).FontSize(12).TextColor(t.TextMuted).Grow(1)
-			ui.Button(c.Key("apply"), "적용").Disabled(problem != "").OnClick(a.applyCurves)
+			ui.Button(c.Key("apply"), tr("Apply", "적용")).Disabled(problem != "").OnClick(a.applyCurves)
 		})
 	})
 }

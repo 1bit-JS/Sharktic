@@ -54,19 +54,19 @@ func setupMessage(code int) string {
 	case setupOK:
 		return ""
 	case setupNotElevated:
-		return "관리자 권한을 얻지 못했습니다"
+		return tr("Could not get administrator rights", "관리자 권한을 얻지 못했습니다")
 	case setupCopyFailed:
-		return "Program Files에 서비스 파일을 복사하지 못했습니다"
+		return tr("Could not copy the service files to Program Files", "Program Files에 서비스 파일을 복사하지 못했습니다")
 	case setupPawnIOFailed:
-		return "PawnIO 드라이버를 설치하지 못했습니다"
+		return tr("Could not install the PawnIO driver", "PawnIO 드라이버를 설치하지 못했습니다")
 	case setupPawnIOTooOld:
-		return "오래된 PawnIO가 설치되어 있습니다. 제거한 뒤 다시 시도해 주세요"
+		return tr("An old PawnIO is installed. Uninstall it and try again", "오래된 PawnIO가 설치되어 있습니다. 제거한 뒤 다시 시도해 주세요")
 	case setupServiceFailed:
-		return "Sharktic 서비스를 등록하거나 시작하지 못했습니다"
+		return tr("Could not register or start the Sharktic service", "Sharktic 서비스를 등록하거나 시작하지 못했습니다")
 	case setupRemoveFailed:
-		return "Sharktic 서비스를 제거하지 못했습니다"
+		return tr("Could not remove the Sharktic service", "Sharktic 서비스를 제거하지 못했습니다")
 	}
-	return fmt.Sprintf("알 수 없는 오류 (%d)", code)
+	return fmt.Sprintf(tr("Unknown error (%d)", "알 수 없는 오류 (%d)"), code)
 }
 
 // serviceDir is where the service's copy of Sharktic.exe lives: a folder only
@@ -233,7 +233,7 @@ func ensurePawnIO() int {
 func installService(m *mgr.Mgr, exe string) error {
 	config := mgr.Config{
 		DisplayName:  serviceDisplayName,
-		Description:  "Sharktic의 고급 팬 제어: CPU 온도와 팬처럼 관리자 권한이 필요한 하드웨어를 읽습니다.",
+		Description:  "Advanced fan control of Sharktic: reads hardware that needs administrator rights, such as the CPU temperature and fans.",
 		StartType:    mgr.StartAutomatic,
 		ErrorControl: mgr.ErrorNormal,
 	}

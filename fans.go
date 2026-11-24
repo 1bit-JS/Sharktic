@@ -1,12 +1,14 @@
 package main
 
+import "strings"
+
 // minFanLevel is the lowest fan level of a curve, in percent.
 const minFanLevel = 20
 
 // fanMode is a performance mode to offer: its label, and the value its backend
 // takes. Only the modes a backend lists are ever set.
 type fanMode struct {
-	label string
+	label msg
 	value uint32
 }
 
@@ -37,6 +39,15 @@ type fanBackend interface {
 	leaveCurves()
 	// diagnosisLines reads what a report tells of the firmware. It must only read.
 	diagnosisLines() []string
+}
+
+// fanLabel is the name of a fan as the user reads it: the service names a
+// board's fans in English, as "Fan 2".
+func fanLabel(name string) string {
+	if n, ok := strings.CutPrefix(name, "Fan "); ok {
+		return tr("Fan ", "팬 ") + n
+	}
+	return name
 }
 
 // detectFans returns the backend of this PC, or nil if it has none.

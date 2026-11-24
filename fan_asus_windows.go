@@ -33,7 +33,7 @@ var procDeviceIoControl = kernel32.NewProc("DeviceIoControl")
 // asusModes are the modes to choose from, of the values that the firmware takes.
 // Others stay out: 3 is full speed, and on the G512LI's firmware no branch handles
 // it.
-var asusModes = []fanMode{{"조용함", 2}, {"균형", balancedMode}, {"터보", 1}}
+var asusModes = []fanMode{{msg{"Silent", "조용함"}, 2}, {msg{"Balanced", "균형"}, balancedMode}, {msg{"Turbo", "터보"}, 1}}
 
 // asusControl talks to the firmware of ASUS laptops through the ASUS System
 // Control Interface driver, which needs no administrator rights. ASUS does not
@@ -191,15 +191,15 @@ var asusDiagDevices = []struct {
 	id   uint32
 	name string
 }{
-	{atkCPUFan, "CPU 팬 속도"},
-	{atkGPUFan, "GPU 팬 속도"},
-	{atkMidFan, "중간 팬 속도"},
-	{atkPerformanceMode, "성능 모드"},
-	{0x00110018, "팬 부스트 모드"},
-	{0x00110019, "성능 모드 (Vivobook 방식)"},
-	{atkCPUCurve, "CPU 팬 곡선"},
-	{atkGPUCurve, "GPU 팬 곡선"},
-	{0x00110032, "중간 팬 곡선"},
+	{atkCPUFan, "CPU fan speed"},
+	{atkGPUFan, "GPU fan speed"},
+	{atkMidFan, "middle fan speed"},
+	{atkPerformanceMode, "performance mode"},
+	{0x00110018, "fan boost mode"},
+	{0x00110019, "performance mode (Vivobook)"},
+	{atkCPUCurve, "CPU fan curve"},
+	{atkGPUCurve, "GPU fan curve"},
+	{0x00110032, "middle fan curve"},
 }
 
 // diagnosisLines reads the firmware with gets alone.
@@ -214,7 +214,7 @@ func asusDiagnosisLines(get func(device uint32) (uint32, bool)) []string {
 	lines := make([]string, len(asusDiagDevices))
 	for i, d := range asusDiagDevices {
 		raw, ok := get(d.id)
-		value, meaning := "--------", "응답 없음"
+		value, meaning := "--------", "no answer"
 		if ok {
 			value, meaning = fmt.Sprintf("%08X", raw), asusMeaning(d.id, raw)
 		}
@@ -226,12 +226,12 @@ func asusDiagnosisLines(get func(device uint32) (uint32, bool)) []string {
 // asusMeaning tells what a get returned, for a person.
 func asusMeaning(device, raw uint32) string {
 	if !atkHasValue(raw) {
-		return "없음"
+		return "absent"
 	}
 	if device == atkCPUFan || device == atkGPUFan || device == atkMidFan {
 		if v, ok := fanRPM(raw); ok {
-			return fmt.Sprintf("있음 (%d rpm)", v)
+			return fmt.Sprintf("present (%d rpm)", v)
 		}
 	}
-	return "있음"
+	return "present"
 }

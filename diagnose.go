@@ -37,8 +37,9 @@ func (d diagnosis) text() string {
 		}
 		return "no"
 	}
-	b.WriteString("Sharktic 진단 정보\n")
-	b.WriteString("펌웨어에서 읽기만 해서 만들었고, 팬 설정은 바꾸지 않았습니다.\n\n")
+	b.WriteString(tr("Sharktic diagnostic info\n", "Sharktic 진단 정보\n"))
+	b.WriteString(tr("Made by reading the firmware only; no fan setting was changed.\n\n",
+		"펌웨어에서 읽기만 해서 만들었고, 팬 설정은 바꾸지 않았습니다.\n\n"))
 	line("app", d.App)
 	line("windows", d.Windows)
 	line("manufacturer", d.Manufacturer)
@@ -60,7 +61,7 @@ func (d diagnosis) text() string {
 		b.WriteString(l + "\n")
 	}
 	if len(d.Advanced) > 0 {
-		b.WriteString("\n[고급 팬 제어]\n")
+		b.WriteString("\n[advanced fan control]\n")
 	}
 	for _, l := range d.Advanced {
 		b.WriteString(l + "\n")
